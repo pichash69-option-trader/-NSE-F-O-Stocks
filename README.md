@@ -36,24 +36,51 @@ Python · `requests` (NSE archive) · SQLite · `pandas` / `numpy` · `streamlit
 
 ---
 
-## 🚀 Quick start
+## 🚀 First-time setup (from a fresh clone)
 
+The repo ships **code only** — no database. On first use you build `nse.db` yourself.
+
+**1. Install Python 3.11+**
+Download from [python.org](https://www.python.org/downloads/). On Windows, tick
+**“Add Python to PATH”** during install.
+
+**2. Get the code**
 ```bash
-# 1. Install dependencies
+git clone https://github.com/pichash69-option-trader/nifty50-equity-fno-dashboard.git
+cd nifty50-equity-fno-dashboard
+```
+No git? Use the green **Code → Download ZIP** button on GitHub, extract it, and open a
+terminal in that folder.
+
+**3. Install dependencies (once)**
+```bash
 pip install -r requirements.txt
-
-# 2. Backfill the database (1-Jan-2024 -> today). First run takes a while
-#    (downloads ~630 trading days of equity + F&O). Resume-safe if interrupted.
-python run_daily.py
-
-# 3. Launch the dashboard
-streamlit run dashboard.py
 ```
 
-The dashboard opens at `http://localhost:8501`.
+**4. Build the database (first run — required)**
+```bash
+python run_daily.py
+```
+A fresh clone has no data, so this downloads everything from 1-Jan-2024 to today and
+creates `nse.db`.
+- Takes **~40–70 min** (F&O is the large part) and builds a **~1 GB** file.
+- Needs internet. **Resume-safe** — if it stops, just run it again to continue.
 
-> The first backfill can take ~40–70 minutes and builds a ~1 GB SQLite file (`nse.db`).
-> After that, `run_daily.py` only fetches new days (fast).
+**5. Launch the dashboard**
+```bash
+streamlit run dashboard.py
+```
+Opens at **http://localhost:8501**.
+
+### Everyday use
+| Task | Command |
+|------|---------|
+| Open the dashboard | `streamlit run dashboard.py` |
+| Stop it | `Ctrl + C` in the terminal |
+| Update to the latest day | `python run_daily.py` (now fast — only new days) |
+
+> Only `run_daily.py` needs internet (to fetch data). Viewing the dashboard is fully local.
+> For hands-free daily updates, see [`task_scheduler_setup.txt`](task_scheduler_setup.txt).
 
 ## 🔄 Daily auto-update (optional, Windows)
 
