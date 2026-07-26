@@ -1,0 +1,71 @@
+====================================================================
+ NSE daily auto-update — Windows Task Scheduler setup
+====================================================================
+
+Goal: roz market close ke baad (6:30 PM) run_daily.py khud chal jaye,
+naya din ka equity + F&O data laaye aur stats update kare.
+
+--------------------------------------------------------------------
+STEP 1 — Task Scheduler kholo
+--------------------------------------------------------------------
+- Start menu → "Task Scheduler" search karo → open.
+
+--------------------------------------------------------------------
+STEP 2 — New task banao
+--------------------------------------------------------------------
+- Right panel → "Create Basic Task..."
+- Name:  NSE Daily Update
+- Description:  NIFTY 50 equity + F&O daily fetch + analysis
+- Next.
+
+--------------------------------------------------------------------
+STEP 3 — Trigger (kab chale)
+--------------------------------------------------------------------
+- "Daily" chuno → Next.
+- Start time:  6:30:00 PM   (market 3:30 close, buffer ke saath)
+- Recur every: 1 days → Next.
+
+--------------------------------------------------------------------
+STEP 4 — Action (kya chale)
+--------------------------------------------------------------------
+- "Start a program" → Next.
+- Program/script:  (Browse karke ye file chuno)
+    C:\Users\ajayk\OneDrive\Desktop\NSE database\run_daily.bat
+- "Start in (optional)":
+    C:\Users\ajayk\OneDrive\Desktop\NSE database
+- Next → Finish.
+
+--------------------------------------------------------------------
+STEP 5 — (Recommended) settings adjust karo
+--------------------------------------------------------------------
+Task ko double-click karke Properties me:
+- General tab:
+    • "Run whether user is logged on or not"  (background me chale)
+    • "Run with highest privileges"  (optional)
+- Conditions tab:
+    • "Start the task only if the computer is on AC power"  → UNCHECK
+      (laptop battery par bhi chale)
+- Settings tab:
+    • "Run task as soon as possible after a scheduled start is missed"
+      → CHECK  (computer band tha to next time chhoote din bhar de)
+- OK.
+
+--------------------------------------------------------------------
+STEP 6 — Test
+--------------------------------------------------------------------
+- Task par right-click → "Run" → dekho run_daily.log me output aata hai:
+    C:\Users\ajayk\OneDrive\Desktop\NSE database\run_daily.log
+
+Bas! Ab roz 6:30 PM ko data khud update hoga.
+Weekend/holiday par NSE file nahi hoti — script use "holiday" mark karke
+skip kar deta hai, koi error nahi.
+
+--------------------------------------------------------------------
+NOTE — pehla run = FULL BACKFILL
+--------------------------------------------------------------------
+run_daily.py pehli baar chalega to 1-Jan-2024 se aaj tak ka poora data
+bharega (~40-70 min, download-bound). Isliye pehla backfill Task Scheduler
+ka wait kiye bina, ek baar manually chala lena behtar:
+    run_daily.bat  double-click  (ya)
+    python run_daily.py
+Uske baad daily incremental fast rahega (ek din).

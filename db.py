@@ -1,0 +1,133 @@
+# -*- coding: utf-8 -*-
+"""
+db.py — SQLite schema setup and small helpers.
+One file DB (nse.db). Safe to call init_db() repeatedly.
+"""
+import sqlite3
+from config import DB_PATH
+
+
+def connect():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL;")     # faster concurrent-ish writes
+    conn.execute("PRAGMA synchronous=NORMAL;")
+    return conn
+
+
+SCHEMA = """
+-- EQUITY: raw daily cash-segment data
+CREATE TABLE IF NOT EXISTS prices (
+    symbol     TEXT NOT NULL,
+    date       TEXT NOT NULL,
+    open       REAL, high REAL, low REAL, close REAL,
+    prev_close REAL, settle REAL,
+    volume     INTEGER, turnover REAL, num_trades INTEGER,
+    deliv_qty  INTEGER, deliv_pct REAL,
+    PRIMARY KEY (symbol, date)
+);
+
+-- F&O FUTURES: all expiries
+CREATE TABLE IF NOT EXISTS futures (
+    symbol   TEXT NOT NULL,
+    date     TEXT NOT NULL,
+    expiry   TEXT NOT NULL,
+    open REAL, high REAL, low REAL, close REAL, settle REAL,
+    contracts INTEGER, value_lakh REAL,
+    oi INTEGER, chg_oi INTEGER,
+    PRIMARY KEY (symbol, date, expiry)
+);
+
+-- F&O OPTIONS: all strikes + all expiries + CE & PE
+CREATE TABLE IF NOT EXISTS options (
+    symbol   TEXT NOT NULL,
+    date     TEXT NOT NULL,
+    expiry   TEXT NOT NULL,
+    strike   REAL NOT NULL,
+    opt_type TEXT NOT NULL,            -- CE / PE
+    open REAL, high REAL, low REAL, close REAL, settle REAL,
+    contracts INTEGER, volume INTEGER, value_lakh REAL,
+    oi INTEGER, chg_oi INTEGER,
+    PRIMARY KEY (symbol, date, expiry, strike, opt_type)
+);
+
+-- Computed math stats (latest per symbol; recomputed each run)
+CREATE TABLE IF NOT EXISTS stats (
+    symbol TEXT NOT NULL,
+    date   TEXT NOT NULL,
+    daily_return REAL, cum_return REAL, mean_return REAL,
+    volatility REAL, ann_volatility REAL,
+    sharpe REAL, max_drawdown REAL, beta REAL,
+    zscore REAL, pct_rank_52w REAL, cagr REAL,
+    skew REAL, kurtosis REAL,
+    put_call_ratio REAL, total_oi INTEGER, oi_change REAL,
+    futures_premium REAL,
+    PRIMARY KEY (symbol, date)
+);
+
+-- Track ingest progress so incremental fetch knows where to resume.
+CREATE TABLE IF NOT EXISTS ingest_log (
+    dataset TEXT NOT NULL,             -- 'equity' / 'fno'
+    date    TEXT NOT NULL,
+    rows    INTEGER,
+    status  TEXT,                      -- 'ok' / 'holiday' / 'error'
+    PRIMARY KEY (dataset, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_prices_date   ON prices(date);
+CREATE INDEX IF NOT EXISTS idx_futures_date  ON futures(date);
+CREATE INDEX IF NOT EXISTS idx_options_date  ON options(date);
+CREATE INDEX IF NOT EXISTS idx_options_chain ON options(symbol, date, expiry);
+"""
+
+
+def init_db():
+    conn = connect()
+    try:
+        conn.executescript(SCHEMA)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def last_ingested_date(dataset):
+    """Most recent date we recorded for a dataset ('equity'/'fno'), or None."""
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT MAX(date) FROM ingest_log WHERE dataset=? AND status IN ('ok','holiday')",
+            (dataset,),
+        ).fetchone()
+        return row[0] if row and row[0] else None
+    finally:
+        conn.close()
+
+
+def done_dates(dataset):
+    """Set of dates already completed (ok/holiday) — so a run skips them and
+    RETRIES any 'error' / missing days (no permanent gaps)."""
+    conn = connect()
+    try:
+        rows = conn.execute(
+            "SELECT date FROM ingest_log WHERE dataset=? AND status IN ('ok','holiday')",
+            (dataset,),
+        ).fetchall()
+        return {r[0] for r in rows}
+    finally:
+        conn.close()
+
+
+def log_ingest(dataset, date, rows, status):
+    conn = connect()
+    try:
+        conn.execute(
+            "INSERT OR REPLACE INTO ingest_log(dataset, date, rows, status) VALUES (?,?,?,?)",
+            (dataset, date, rows, status),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+if __name__ == "__main__":
+    init_db()
+    print(f"DB ready at {DB_PATH}")

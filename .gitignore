@@ -1,0 +1,27 @@
+# Database (large, user generates their own)
+nse.db
+nse.db-wal
+nse.db-shm
+*.sqlite
+*.sqlite3
+
+# Logs
+run_daily.log
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Claude / local tooling
+.claude/
