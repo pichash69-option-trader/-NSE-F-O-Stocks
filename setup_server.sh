@@ -34,7 +34,10 @@ EOF
 )
 
 # Keep any unrelated cron lines, drop this project's old lines, add fresh ones.
-( crontab -l 2>/dev/null | grep -vF "$PROJECT_DIR" ; echo "$CRON_LINES" ) | crontab -
+# `|| true` on grep: when the crontab is empty grep exits non-zero, which would
+# otherwise abort the subshell under `set -e` and install an EMPTY crontab.
+EXISTING="$(crontab -l 2>/dev/null | grep -vF "$PROJECT_DIR" || true)"
+printf '%s\n%s\n' "$EXISTING" "$CRON_LINES" | grep -v '^$' | crontab -
 
 echo
 echo "Done. Installed cron jobs:"
