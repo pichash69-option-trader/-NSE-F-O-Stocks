@@ -85,5 +85,5 @@ generate your own `nse.db` locally.
 
 ## 📜 License
 
-Code licensed under the [MIT License](LICENSE). Fill in your name in the `LICENSE` file.
+Code licensed under the [MIT License](LICENSE) © 2026 pichash69-option-trader.
 NSE data is **not** covered by this licence and remains subject to NSE's terms.
