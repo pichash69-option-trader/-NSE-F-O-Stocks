@@ -5,6 +5,9 @@
 Goal: roz market close ke baad (6:30 PM) run_daily.py khud chal jaye,
 naya din ka equity + F&O data laaye aur stats update kare.
 
+NOTE: neeche <PROJECT> ka matlab hai wo folder jahan tumne ye project rakha hai.
+      Example: C:\Users\<username>\...\nifty50-equity-fno-dashboard
+
 --------------------------------------------------------------------
 STEP 1 — Task Scheduler kholo
 --------------------------------------------------------------------
@@ -30,9 +33,9 @@ STEP 4 — Action (kya chale)
 --------------------------------------------------------------------
 - "Start a program" → Next.
 - Program/script:  (Browse karke ye file chuno)
-    C:\Users\ajayk\OneDrive\Desktop\NSE database\run_daily.bat
+    <PROJECT>\run_daily.bat
 - "Start in (optional)":
-    C:\Users\ajayk\OneDrive\Desktop\NSE database
+    <PROJECT>
 - Next → Finish.
 
 --------------------------------------------------------------------
@@ -54,7 +57,7 @@ Task ko double-click karke Properties me:
 STEP 6 — Test
 --------------------------------------------------------------------
 - Task par right-click → "Run" → dekho run_daily.log me output aata hai:
-    C:\Users\ajayk\OneDrive\Desktop\NSE database\run_daily.log
+    <PROJECT>\run_daily.log
 
 Bas! Ab roz 6:30 PM ko data khud update hoga.
 Weekend/holiday par NSE file nahi hoti — script use "holiday" mark karke
