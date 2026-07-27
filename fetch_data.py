@@ -20,8 +20,21 @@ from datetime import date, datetime, timedelta
 import requests
 
 import db
-from config import (HEADERS, NIFTY50_SET, REQUEST_DELAY, REQUEST_TIMEOUT,
-                    MAX_RETRIES, START_DATE)
+import universe
+from config import (HEADERS, NIFTY50_SET, UNIVERSE, REQUEST_DELAY,
+                    REQUEST_TIMEOUT, MAX_RETRIES, START_DATE)
+
+# Which symbols to keep. Overridden in run() with the active universe so the
+# whole run uses one consistent set. Defaults to NIFTY 50 for direct calls/tests.
+SYMBOLS = NIFTY50_SET
+
+
+def active_symbols():
+    """The symbol set to fetch: full F&O universe or the NIFTY 50."""
+    if UNIVERSE == "FNO":
+        s = universe.fno_universe()
+        return s if s else NIFTY50_SET           # fall back if NSE unreachable
+    return NIFTY50_SET
 
 CM_URL = "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_{ymd}_F_0000.csv.zip"
 MTO_URL = "https://nsearchives.nseindia.com/archives/equities/mto/MTO_{dmy}.DAT"
@@ -60,7 +73,7 @@ def parse_equity(content):
         if row.get("SctySrs", "").strip() != "EQ":
             continue
         sym = row.get("TckrSymb", "").strip()
-        if sym not in NIFTY50_SET:
+        if sym not in SYMBOLS:
             continue
 
         def num(key):
@@ -91,7 +104,7 @@ def parse_delivery(text):
         if series != "EQ":
             continue
         sym = parts[2].strip()
-        if sym not in NIFTY50_SET:
+        if sym not in SYMBOLS:
             continue
         try:
             deliv_qty = int(parts[5])
@@ -154,6 +167,9 @@ def daterange(start, end):
 
 def run(end=None):
     db.init_db()
+    global SYMBOLS
+    SYMBOLS = active_symbols()
+    print(f"Universe: {UNIVERSE} ({len(SYMBOLS)} symbols)")
     start = datetime.strptime(START_DATE, "%Y-%m-%d").date()
     end = end or date.today()
     done = db.done_dates("equity")               # skip completed, retry errors/gaps

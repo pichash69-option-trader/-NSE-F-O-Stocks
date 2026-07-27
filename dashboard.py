@@ -131,6 +131,14 @@ def q(sql, params=()):
         conn.close()
 
 
+@st.cache_data(ttl=300)
+def all_symbols():
+    """Stock list for the dropdown — whatever is actually in the DB (NIFTY 50
+    or full F&O universe), sorted. Falls back to the config list if empty."""
+    df = q("SELECT DISTINCT symbol FROM prices ORDER BY symbol")
+    return df["symbol"].tolist() if not df.empty else NIFTY50
+
+
 def stock_history(symbol):
     df = q("SELECT date,open,high,low,close,prev_close,volume,turnover,"
            "num_trades,deliv_qty,deliv_pct FROM prices WHERE symbol=? ORDER BY date",
@@ -445,7 +453,7 @@ with hqmark.popover("❓", help="How to use — click karo"):
     st.markdown(HELP_MD)
 
 hc1, hc2 = st.columns([1, 2])
-symbol = hc1.selectbox("Stock", NIFTY50, index=0)
+symbol = hc1.selectbox("Stock", all_symbols(), index=0)
 lookback = hc2.radio("Kitne din dekhne hain", [7, 20, 50, "All"], index=1,
                      horizontal=True)
 st.divider()

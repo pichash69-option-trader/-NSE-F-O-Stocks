@@ -11,6 +11,12 @@ DB_PATH = BASE_DIR / "nse.db"
 # --- History ---
 START_DATE = "2024-01-01"   # fixed backfill start (1-Jan-2024)
 
+# --- Which stocks to track ---
+#   "NIFTY50" -> the 50 NIFTY constituents (below)
+#   "FNO"     -> the full F&O stock universe (~210), auto-derived from the F&O
+#                bhavcopy each run (see universe.py). Bigger: ~4x data, ~4 GB DB.
+UNIVERSE = "FNO"
+
 # --- Fetch behaviour ---
 REQUEST_DELAY = 0.4         # seconds between date downloads (be polite to NSE)
 REQUEST_TIMEOUT = 30        # per-request timeout (seconds)

@@ -16,7 +16,7 @@ import zipfile
 from datetime import date, datetime, timedelta
 
 import db
-from config import (NIFTY50_SET, REQUEST_DELAY, START_DATE)
+from config import (NIFTY50_SET, UNIVERSE, REQUEST_DELAY, START_DATE)
 from fetch_data import _get, daterange   # reuse HTTP + date helpers
 
 FO_URL = "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_{ymd}_F_0000.csv.zip"
@@ -37,7 +37,9 @@ def parse_fno(content):
     fut, opt = [], []
     for row in csv.DictReader(io.StringIO(raw)):
         sym = row.get("TckrSymb", "").strip()
-        if sym not in NIFTY50_SET:
+        # NIFTY50 mode: only the 50. FNO mode: keep every stock (STF/STO) — the
+        # bhavcopy's own symbols ARE that day's F&O universe (self-contained).
+        if UNIVERSE == "NIFTY50" and sym not in NIFTY50_SET:
             continue
         tp = row.get("FinInstrmTp", "").strip()
         iso = row.get("TradDt", "").strip()
