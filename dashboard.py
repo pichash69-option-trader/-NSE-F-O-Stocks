@@ -23,99 +23,62 @@ st.set_page_config(page_title="NSE NIFTY 50 — date-wise", layout="wide")
 
 # Help content — shown from the "?" icon in the top corner (popover).
 HELP_MD = """
-## 👋 Is dashboard ko kaise use karein
+## 👋 Dashboard kaise use karein
 
-Ye dashboard **NIFTY 50 ke 50 stocks** ka NSE data dikhata hai — **date-wise**
-(din-b-din), taaki tum ek nazar me dekh sako *"pehle kaisa tha, ab kaise badal raha hai"*.
-Sab data seedha NSE se aata hai, aur roz apne aap update hota hai.
+Ye dashboard **F&O stocks (~210)** ka NSE data **date-wise** (din-b-din) dikhata hai —
+equity + futures + options + FII/DII, sab. Sab data seedha NSE se, roz auto-update.
 
-> ⚠️ Ye **educational / research** tool hai — investment advice nahi. Trading decisions
-> apne research aur risk par lena.
+> ⚠️ Ye **educational / research** tool hai — investment advice nahi.
 
 ---
 
-### 🧭 Shuru kaise karein (3 step)
+### 🧭 Shuru kaise karein
 1. **Upar header** me se ek **stock** choose karo (jaise RELIANCE).
-2. **"Kitne din dekhne hain"** — 7 / 20 / 50 / All chuno (kitni history dekhni hai).
-3. Neeche **3 sections** apne aap bhar jaate hain: Stock → Futures → Option chain.
+2. **"Kitne din dekhne hain"** — 7 / 20 / 50 / All chuno.
+3. Neeche **6 tabs** me apna data dekho (date-wale tabs me **slider** se din badlo — fast scrub).
 
 ---
 
-### 📈 Tab 1: Stock (date-wise)
-Upar 4 box: **Close**, **Volume**, **Delivery %**, aur range me kitne din.
+### 📈 Stock (date-wise)
+Har din ek row: **OHLC, Chg%** (green/red pill), **Volume & Delivery%** (bars),
+**Turnover ₹Cr, Trades**. Neeche **candle chart** — kisi candle par hover = poori detail.
+🟢 up din · 🔴 down din. (Delivery% high = real buying, sirf speculation nahi.)
 
-**Section 1 — Stock table (har din ek row):**
-| Column | Matlab |
-|--------|--------|
-| Open / High / Low / Close | Din ka pehla / sabse ऊँcha / sabse neecha / aakhri bhaav |
-| **Chg%** (green/red pill) | Kal se kitna % badha (▲) ya gira (▼) |
-| **Volume** (blue bar) | Kitne share trade hue — bada bar = zyada activity |
-| **Deliv%** (green bar) | Kitne % actually delivery hue — **high = real buying** (sirf speculation nahi) |
+### 🔮 Futures
+1. **Teeno expiry** (near/next/far) ka total + changes — OHLC, Settle, **Premium**
+   (future − spot; +ve = bullish hint), **OI + Chg OI** (bars/colors), Σ TOTAL row.
+2. **Estimated participant split** — ⚠️ ye *estimate* hai (real per-stock FII/DII data
+   publicly nahi milta), rough idea ke liye.
 
-**Day range (candle) chart:** har candle ek din.
-🟢 green = us din price chadha, 🔴 red = gira. **Kisi bhi candle par hover** karo → us
-din ki poori detail (OHLC, Chg%, Volume, Delivery%) dikhegi.
+### ⛓️ Option chain (Sensibull style)
+- **Σ Sum chain** — teeno expiry ka har strike par total. Phir **har expiry ka apna chain**.
+- 🟧 CALLS ITM shaded · 🟥 PUTS ITM shaded · 🔵 **ATM** row · ChgOI green = OI add, red = cut.
+- **Strikes ± slider** se kitne strikes dikhane control karo. **Max pain** heading me.
+- **PCR** = Put OI ÷ Call OI (>1 = zyada puts/bearish, <1 = bullish).
 
----
+### 🏦 FII/DII
+**FII / DII / Pro / Client** ka F&O positioning (OI + Volume). **Net = Long − Short**:
+🟢 net long (bullish), 🔴 net short (bearish). Ye market ka **overall** rukh dikhata hai
+(saare stocks ka jod — per-stock nahi).
 
-### 📑 Section 2 — Futures (teeno expiry)
-Ek stock ke future 3 expiry me trade hote hain (near / next / far month).
-| Column | Matlab |
-|--------|--------|
-| Close | Future ka bhaav |
-| **Premium** | Future − spot (stock ka actual price). +ve = future mehenga (bullish hint) |
-| **Open Interest (OI)** | Kitni positions abhi live hain — bada bar = zyada interest |
-| **Chg OI** | OI kal se kitna badla (green = badha, red = ghata) |
-| **Σ TOTAL row** | Teeno expiry ka jod (blue border wala) |
+### 🎯 Positioning
+**Real OI buildup** (price + OI change se) — har stock ka:
+- Price ↑ + OI ↑ = **Long Buildup** (bulls) · Price ↓ + OI ↑ = **Short Buildup** (bears)
+- Price ↑ + OI ↓ = **Short Covering** · Price ↓ + OI ↓ = **Long Unwinding**
+Market scan + filter — kaunse stocks me kaunsa buildup ho raha, ek nazar me.
 
----
-
-### ⛓️ Section 3 — Option chain (Sensibull style)
-Sabse upar **spot price · PCR** dikhta hai. Phir do cheezein:
-
-**(a) Σ SUM CHAIN** — teeno expiry ka har strike par **total** (ek hi jagah poori picture).
-**(b) Har expiry ka apna chain** — expand karke dekho (max pain bhi heading me).
-
-**Chain kaise padhein:**
-- **Table ke beech wala column = Strike price**. Left = **CALLS (CE)**, Right = **PUTS (PE)**.
-- 🟧 **Orange shade (calls)** = ITM calls (strike spot se neeche).
-  🟥 **Red shade (puts)** = ITM puts (strike spot se ऊpar).
-- **OI ke peeche bar** = us strike par kitni positions (bada bar = strong level).
-- **Chg OI**: 🟢 green = nayi positions bani, 🔴 red = positions kati.
-- 🔵 **Blue line wali row = ATM** (spot ke sabse paas ka strike).
-- **Strikes around ATM (± count)** slider se kitne strikes dikhane hain control karo (0 = saare).
-
-**Kaam ki terms:**
-| Term | Simple matlab |
-|------|---------------|
-| **PCR** (Put-Call Ratio) | Put OI ÷ Call OI. >1 = zyada puts, <1 = zyada calls |
-| **Max pain** | Wo strike jahan sabse zyada option buyers ko nuksan (expiry uske aas-paas khinchne ka tendency) |
-| **OI** | Open Interest — live contracts ki sankhya |
+### 📊 Overview
+Saare stocks ka **math** ek table me — Return, Volatility, Sharpe, Max DD, Beta,
+Z-score, 52w %ile, Skew/Kurtosis, PCR, OI. **"Sort by"** se sort karo.
+(Sab stats **split/bonus-adjusted** hain.)
 
 ---
 
-### 📊 Tab 2: Overview (50 stocks)
-Saare 50 stocks ka **math** ek table me. Upar **"Sort by"** dropdown se sort karo.
-| Column | Matlab |
-|--------|--------|
-| **Return%** | Poore period me total % return |
-| **Ann Vol** | Annualized volatility — kitna up-down (risk) |
-| **Sharpe** | Return ÷ risk (zyada = better risk-adjusted) |
-| **Max DD** | Max drawdown — peak se sabse bada girawat % |
-| **Beta** | Market ke saath kitna chalta (1 = market jaisa, >1 = zyada swingy) |
-| **52w %ile** | 52-week range me abhi kahan (100 = high ke paas) |
-| **PCR / Fut Prem** | Option PCR / futures premium |
+### 🔄 Data update
+Har trading din **market close ke baad (~6:30 PM IST)** naya data auto-add hota hai.
+Weekend/holiday skip. Latest din upar.
 
-> Saare stats **split/bonus-adjusted** hain (jaise 1:10 split ka fake gira hataya gaya).
-
----
-
-### 🔄 Data kab update hota hai
-- Har trading din **market close ke baad (~6:30 PM)** naya data apne aap add hota hai.
-- Weekend/holiday par NSE data nahi hota — wo din skip ho jaate hain (normal).
-- Sabse latest din upar dikhta hai.
-
-**Bas! Stock choose karo, din chuno, aur explore karo.** 🚀
+**Bas! Stock chuno, din chuno, explore karo.** 🚀
 """
 
 
