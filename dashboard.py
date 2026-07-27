@@ -561,8 +561,8 @@ lookback = hc2.radio("Kitne din dekhne hain", [7, 20, 50, "All"], index=1,
                      horizontal=True)
 st.divider()
 
-tab_stock, tab_chain, tab_fii, tab_pos, tab_overview = st.tabs(
-    ["📈 Stock (date-wise)", "⛓️ Option chain", "🏦 FII/DII",
+tab_stock, tab_fut, tab_chain, tab_fii, tab_pos, tab_overview = st.tabs(
+    ["📈 Stock (date-wise)", "🔮 Futures", "⛓️ Option chain", "🏦 FII/DII",
      "🎯 Positioning", "📊 Overview"])
 
 # =========================================================================== #
@@ -618,28 +618,46 @@ with tab_stock:
                          tickmode="array",
                          tickvals=list(cv["date"])[::step])
         st.plotly_chart(fig, width="stretch")
-
-        # --- F&O block (shared date) ---
-        fdates = fno_dates(symbol)
-        if not fdates:
-            st.info(f"{symbol}: F&O data abhi nahi (Phase 2 backfill ke baad aayega).")
-        else:
-            odate = st.selectbox("F&O date", fdates, index=0, key="fut_date")
-            spot = q("SELECT close FROM prices WHERE symbol=? AND date=?",
-                     (symbol, odate))
-            spot_px = float(spot.iloc[0]["close"]) if not spot.empty else None
-
-            # --- 2. Futures — teeno expiry ka total + changes (themed) ---
-            st.markdown("#### 2 · Futures — teeno expiry ka total + changes")
-            fut = q("""SELECT expiry, open, high, low, close, settle,
-                              contracts, value_lakh, oi, chg_oi
-                       FROM futures WHERE symbol=? AND date=? ORDER BY expiry""",
-                    (symbol, odate))
-            st.markdown(render_futures_table(fut, spot_px), unsafe_allow_html=True)
-            st.caption("Option chain ⛓️ ab alag tab me hai (upar).")
+        st.caption("Futures 🔮 aur Option chain ⛓️ ab alag tabs me hain (upar).")
 
 # =========================================================================== #
-# TAB 2 — Option chain (Sensibull style)
+# TAB — Futures (totals + estimated participant split)
+# =========================================================================== #
+with tab_fut:
+    st.subheader(f"{symbol} — futures")
+    ffdates = q("SELECT DISTINCT date FROM futures WHERE symbol=? ORDER BY date DESC",
+                (symbol,))["date"].tolist()
+    if not ffdates:
+        st.info(f"{symbol}: F&O data abhi nahi.")
+    else:
+        fdate = st.selectbox("F&O date", ffdates, index=0, key="fut_tab_date")
+        fspot = q("SELECT close FROM prices WHERE symbol=? AND date=?", (symbol, fdate))
+        fspot_px = float(fspot.iloc[0]["close"]) if not fspot.empty else None
+
+        # --- 1. Futures — teeno expiry ka total + changes ---
+        st.markdown("#### 1 · Futures — teeno expiry ka total + changes")
+        fut = q("""SELECT expiry, open, high, low, close, settle,
+                          contracts, value_lakh, oi, chg_oi
+                   FROM futures WHERE symbol=? AND date=? ORDER BY expiry""",
+                (symbol, fdate))
+        st.markdown(render_futures_table(fut, fspot_px), unsafe_allow_html=True)
+
+        # --- 2. Estimated participant split (proportional estimate) ---
+        st.markdown("#### 2 · Estimated participant split")
+        st.warning("⚠️ Ye ek **PROPORTIONAL ESTIMATE** hai — maan liya ki har stock me "
+                   "market-wide jaisa hi FII/DII/Pro/Client mix hai. Real per-stock "
+                   "participant data publicly milta nahi. Rough idea ke liye, exact nahi.")
+        pmax = q("SELECT MAX(date) d FROM participant")["d"].iloc[0]
+        part = q("SELECT client_type, fut_stk_long FROM participant WHERE date=? "
+                 "AND metric='oi' AND client_type IN ('FII','DII','Pro','Client')", (pmax,))
+        soi = q("SELECT SUM(oi) oi FROM futures WHERE symbol=? AND date=?", (symbol, fdate))
+        stock_oi = float(soi["oi"].iloc[0]) if not soi.empty and pd.notna(soi["oi"].iloc[0]) else 0
+        st.markdown(f"**{symbol}** — futures OI = **{_fmt(stock_oi)}** contracts. "
+                    "Estimated split (market-wide Future-Stock % se):")
+        st.markdown(render_est_split(part, stock_oi), unsafe_allow_html=True)
+
+# =========================================================================== #
+# TAB — Option chain (Sensibull style)
 # =========================================================================== #
 with tab_chain:
     st.subheader(f"{symbol} — option chain")
@@ -762,22 +780,8 @@ with tab_pos:
     else:
         st.caption(f"Latest data: {ldate}")
 
-        # --- 1. Estimated participant split (proportional estimate) ---
-        st.markdown("#### 1 · Estimated participant split")
-        st.warning("⚠️ Ye ek **PROPORTIONAL ESTIMATE** hai — maan liya ki har stock me "
-                   "market-wide jaisa hi FII/DII/Pro/Client mix hai. Real per-stock "
-                   "participant data publicly milta nahi. Rough idea ke liye, exact nahi.")
-        pmax = q("SELECT MAX(date) d FROM participant")["d"].iloc[0]
-        part = q("SELECT client_type, fut_stk_long FROM participant WHERE date=? "
-                 "AND metric='oi' AND client_type IN ('FII','DII','Pro','Client')", (pmax,))
-        soi = q("SELECT SUM(oi) oi FROM futures WHERE symbol=? AND date=?", (symbol, ldate))
-        stock_oi = float(soi["oi"].iloc[0]) if not soi.empty and pd.notna(soi["oi"].iloc[0]) else 0
-        st.markdown(f"**{symbol}** — futures OI = **{_fmt(stock_oi)}** contracts. "
-                    "Estimated split (market-wide Future-Stock % se):")
-        st.markdown(render_est_split(part, stock_oi), unsafe_allow_html=True)
-
-        # --- 2. Real OI buildup ---
-        st.markdown("#### 2 · Real OI buildup — price + OI change (reliable)")
+        # --- Real OI buildup ---
+        st.markdown("#### Real OI buildup — price + OI change (reliable)")
         st.caption("Price ↑ + OI ↑ = Long Buildup · Price ↓ + OI ↑ = Short Buildup · "
                    "Price ↑ + OI ↓ = Short Covering · Price ↓ + OI ↓ = Long Unwinding")
         pr = q("SELECT symbol, close, prev_close FROM prices WHERE date=?", (ldate,))
