@@ -773,12 +773,11 @@ with tab_fii:
 # =========================================================================== #
 with tab_pos:
     st.subheader("Stock positioning")
-    ldate_row = q("SELECT MAX(date) d FROM futures")
-    ldate = ldate_row["d"].iloc[0] if not ldate_row.empty else None
-    if not ldate:
+    pos_dates = q("SELECT DISTINCT date FROM futures ORDER BY date DESC")["date"].tolist()
+    if not pos_dates:
         st.info("F&O data abhi nahi.")
     else:
-        st.caption(f"Latest data: {ldate}")
+        ldate = st.selectbox("Date", pos_dates, index=0, key="pos_date")
 
         # --- Real OI buildup ---
         st.markdown("#### Real OI buildup — price + OI change (reliable)")
