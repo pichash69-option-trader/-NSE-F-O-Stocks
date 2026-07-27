@@ -484,6 +484,69 @@ def render_participant(df):
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
+def render_est_split(part, stock_oi):
+    """PROPORTIONAL ESTIMATE: split a stock's futures OI among FII/DII/Pro/Client
+    using their market-wide Future-Stock long share. NOT real per-stock data."""
+    if part is None or part.empty or not stock_oi:
+        return "<i>—</i>"
+    order = {"FII": 0, "DII": 1, "Pro": 2, "Client": 3}
+    part = part.copy()
+    part["_o"] = part["client_type"].map(order).fillna(9)
+    part = part.sort_values("_o")
+    tot = part["fut_stk_long"].sum() or 1
+    rows = []
+    for _, r in part.iterrows():
+        pct = r["fut_stk_long"] / tot * 100
+        est = pct / 100 * stock_oi
+        w = min(100, pct)
+        bar = (f'<span class="bar-bg bar-vol" style="width:{w:.0f}%"></span>'
+               f'<span class="bar-v">{pct:.1f}%</span>')
+        rows.append(
+            f'<tr><td class="date">{r["client_type"]}</td>'
+            f'<td class="bar-cell">{bar}</td>'
+            f'<td class="cl">{_fmt(est)}</td></tr>')
+    return (STOCK_CSS +
+            '<div style="overflow-x:auto"><table class="stbl" style="min-width:360px">'
+            '<thead><tr><th class="l">Participant</th>'
+            '<th>Market share (Fut Stock)</th><th>Est. contracts (is stock me)</th>'
+            '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
+
+
+BUILDUP_COLOR = {"Long Buildup": "#1faa6e", "Short Covering": "#5dcAa5",
+                 "Short Buildup": "#e24b4a", "Long Unwinding": "#f0997b"}
+
+
+def classify_buildup(price_chg, oi_chg):
+    if oi_chg > 0:
+        return "Long Buildup" if price_chg >= 0 else "Short Buildup"
+    return "Short Covering" if price_chg >= 0 else "Long Unwinding"
+
+
+def render_buildup_scan(df):
+    """Themed table: per-stock OI buildup (price + OI change). Real, reliable."""
+    if df is None or df.empty:
+        return "<i>—</i>"
+    df = df.sort_values("chg_oi", ascending=False)
+    rows = []
+    for _, r in df.iterrows():
+        col = BUILDUP_COLOR.get(r["buildup"], "#888")
+        pchg = r["price_chg_pct"]
+        pcls = "up" if pchg >= 0 else "dn"
+        rows.append(
+            f'<tr><td class="date" style="font-weight:600">{r["symbol"]}</td>'
+            f'<td class="{pcls}">{pchg:+.2f}%</td>'
+            f'<td>{_fmt(r["oi"])}</td>'
+            f'<td class="{"up" if r["chg_oi"]>=0 else "dn"}">'
+            f'{"+" if r["chg_oi"]>=0 else ""}{_fmt(r["chg_oi"])}</td>'
+            f'<td><span style="color:{col};font-weight:600">{r["buildup"]}</span></td>'
+            f'</tr>')
+    return (STOCK_CSS +
+            '<div style="overflow-x:auto"><table class="stbl" style="min-width:460px">'
+            '<thead><tr><th class="l">Stock</th><th>Price chg</th>'
+            '<th>Futures OI</th><th>OI chg</th><th>Buildup</th>'
+            '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
+
+
 # --------------------------------------------------------------------------- #
 # Top header (controls moved here from the sidebar)
 # --------------------------------------------------------------------------- #
@@ -498,8 +561,9 @@ lookback = hc2.radio("Kitne din dekhne hain", [7, 20, 50, "All"], index=1,
                      horizontal=True)
 st.divider()
 
-tab_stock, tab_chain, tab_fii, tab_overview = st.tabs(
-    ["📈 Stock (date-wise)", "⛓️ Option chain", "🏦 FII/DII", "📊 Overview"])
+tab_stock, tab_chain, tab_fii, tab_pos, tab_overview = st.tabs(
+    ["📈 Stock (date-wise)", "⛓️ Option chain", "🏦 FII/DII",
+     "🎯 Positioning", "📊 Overview"])
 
 # =========================================================================== #
 # TAB 1 — date-wise stock view
@@ -685,6 +749,66 @@ with tab_fii:
                     "total_long,total_short FROM participant WHERE date=? "
                     "ORDER BY metric,client_type", (pdate,))
             st.dataframe(raw, width="stretch", hide_index=True)
+
+# =========================================================================== #
+# TAB — Positioning (estimated split + real OI buildup)
+# =========================================================================== #
+with tab_pos:
+    st.subheader("Stock positioning")
+    ldate_row = q("SELECT MAX(date) d FROM futures")
+    ldate = ldate_row["d"].iloc[0] if not ldate_row.empty else None
+    if not ldate:
+        st.info("F&O data abhi nahi.")
+    else:
+        st.caption(f"Latest data: {ldate}")
+
+        # --- 1. Estimated participant split (proportional estimate) ---
+        st.markdown("#### 1 · Estimated participant split")
+        st.warning("⚠️ Ye ek **PROPORTIONAL ESTIMATE** hai — maan liya ki har stock me "
+                   "market-wide jaisa hi FII/DII/Pro/Client mix hai. Real per-stock "
+                   "participant data publicly milta nahi. Rough idea ke liye, exact nahi.")
+        pmax = q("SELECT MAX(date) d FROM participant")["d"].iloc[0]
+        part = q("SELECT client_type, fut_stk_long FROM participant WHERE date=? "
+                 "AND metric='oi' AND client_type IN ('FII','DII','Pro','Client')", (pmax,))
+        soi = q("SELECT SUM(oi) oi FROM futures WHERE symbol=? AND date=?", (symbol, ldate))
+        stock_oi = float(soi["oi"].iloc[0]) if not soi.empty and pd.notna(soi["oi"].iloc[0]) else 0
+        st.markdown(f"**{symbol}** — futures OI = **{_fmt(stock_oi)}** contracts. "
+                    "Estimated split (market-wide Future-Stock % se):")
+        st.markdown(render_est_split(part, stock_oi), unsafe_allow_html=True)
+
+        # --- 2. Real OI buildup ---
+        st.markdown("#### 2 · Real OI buildup — price + OI change (reliable)")
+        st.caption("Price ↑ + OI ↑ = Long Buildup · Price ↓ + OI ↑ = Short Buildup · "
+                   "Price ↑ + OI ↓ = Short Covering · Price ↓ + OI ↓ = Long Unwinding")
+        pr = q("SELECT symbol, close, prev_close FROM prices WHERE date=?", (ldate,))
+        fu = q("SELECT symbol, SUM(oi) oi, SUM(chg_oi) chg_oi FROM futures "
+               "WHERE date=? GROUP BY symbol", (ldate,))
+        scan = pr.merge(fu, on="symbol")
+        scan = scan[scan["prev_close"] > 0].copy()
+        scan["price_chg_pct"] = (scan["close"] / scan["prev_close"] - 1) * 100
+        scan["buildup"] = [classify_buildup(p, o)
+                           for p, o in zip(scan["price_chg_pct"], scan["chg_oi"])]
+
+        sel = scan[scan["symbol"] == symbol]
+        if not sel.empty:
+            b = sel.iloc[0]
+            col = BUILDUP_COLOR.get(b["buildup"], "#888")
+            st.markdown(f"**{symbol}:** price {b['price_chg_pct']:+.2f}% · "
+                        f"OI chg {b['chg_oi']:+,.0f} → "
+                        f"<span style='color:{col};font-weight:600;font-size:18px'>"
+                        f"{b['buildup']}</span>", unsafe_allow_html=True)
+
+        counts = scan["buildup"].value_counts()
+        cc = st.columns(4)
+        for i, b in enumerate(["Long Buildup", "Short Buildup",
+                               "Short Covering", "Long Unwinding"]):
+            cc[i].metric(b, int(counts.get(b, 0)))
+
+        st.markdown("**Market scan — kaunse stocks me kya positioning:**")
+        pick = st.selectbox("Buildup filter", ["All", "Long Buildup", "Short Buildup",
+                                               "Short Covering", "Long Unwinding"])
+        show = scan if pick == "All" else scan[scan["buildup"] == pick]
+        st.markdown(render_buildup_scan(show), unsafe_allow_html=True)
 
 # =========================================================================== #
 # TAB — overview (all-stock math stats)
