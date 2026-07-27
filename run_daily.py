@@ -21,6 +21,7 @@ from datetime import datetime
 
 import fetch_data
 import fetch_fno
+import fetch_participant
 import analysis
 from config import BASE_DIR
 
@@ -61,17 +62,19 @@ def main():
     log.info(f"run_daily START  {datetime.now():%Y-%m-%d %H:%M:%S}")
     t0 = time.time()
 
-    ok_eq = _step("1/3 Equity + delivery", fetch_data.run)
-    ok_fo = _step("2/3 F&O futures + options", fetch_fno.run)
+    ok_eq = _step("1/4 Equity + delivery", fetch_data.run)
+    ok_fo = _step("2/4 F&O futures + options", fetch_fno.run)
+    ok_pt = _step("3/4 Participant OI/Vol (FII/DII/Pro/Client)", fetch_participant.run)
     # Stats only make sense if we have price data; run even if F&O partially failed.
-    ok_an = _step("3/3 Math stats", analysis.run)
+    ok_an = _step("4/4 Math stats", analysis.run)
 
     dur = time.time() - t0
-    status = "OK" if (ok_eq and ok_fo and ok_an) else "COMPLETED WITH ERRORS"
+    ok_all = ok_eq and ok_fo and ok_pt and ok_an
+    status = "OK" if ok_all else "COMPLETED WITH ERRORS"
     log.info(f"run_daily END  [{status}]  total {dur/60:.1f} min")
     log.info("=" * 60)
     # Non-zero exit if anything failed (useful for Task Scheduler result codes)
-    sys.exit(0 if (ok_eq and ok_fo and ok_an) else 1)
+    sys.exit(0 if ok_all else 1)
 
 
 if __name__ == "__main__":

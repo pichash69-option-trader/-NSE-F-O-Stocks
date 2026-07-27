@@ -444,6 +444,46 @@ def render_futures_table(fut, spot):
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
+def render_participant(df):
+    """Themed net-position table for participant OI/Vol (FII/DII/Pro/Client)."""
+    if df is None or df.empty:
+        return "<i>—</i>"
+    order = {"FII": 0, "DII": 1, "Pro": 2, "Client": 3, "TOTAL": 4}
+    df = df.copy()
+    df["_o"] = df["client_type"].map(order).fillna(9)
+    df = df.sort_values("_o")
+
+    def net(v):
+        cls = "up" if (v or 0) >= 0 else "dn"
+        sign = "+" if (v or 0) >= 0 else ""
+        return f'<span class="{cls}">{sign}{_fmt(v)}</span>'
+
+    rows = []
+    for _, r in df.iterrows():
+        idxfut = r["fut_idx_long"] - r["fut_idx_short"]
+        stkfut = r["fut_stk_long"] - r["fut_stk_short"]
+        optidx = ((r["opt_idx_call_long"] + r["opt_idx_put_long"])
+                  - (r["opt_idx_call_short"] + r["opt_idx_put_short"]))
+        optstk = ((r["opt_stk_call_long"] + r["opt_stk_put_long"])
+                  - (r["opt_stk_call_short"] + r["opt_stk_put_short"]))
+        tnet = r["total_long"] - r["total_short"]
+        tot = " tot" if r["client_type"] == "TOTAL" else ""
+        rows.append(
+            f'<tr class="{tot.strip()}"><td class="date">{r["client_type"]}</td>'
+            f'<td>{net(idxfut)}</td><td>{net(stkfut)}</td>'
+            f'<td>{net(optidx)}</td><td>{net(optstk)}</td>'
+            f'<td>{_fmt(r["total_long"])}</td><td>{_fmt(r["total_short"])}</td>'
+            f'<td>{net(tnet)}</td></tr>')
+    return (STOCK_CSS +
+            '<style>.stbl tr.tot td{border-top:2px solid #378add;font-weight:600;'
+            'background:rgba(55,138,221,.10);}</style>'
+            '<div style="overflow-x:auto"><table class="stbl"><thead><tr>'
+            '<th class="l">Participant</th><th>Idx Fut net</th><th>Stk Fut net</th>'
+            '<th>Idx Opt net</th><th>Stk Opt net</th>'
+            '<th>Total Long</th><th>Total Short</th><th>Net</th>'
+            '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
+
+
 # --------------------------------------------------------------------------- #
 # Top header (controls moved here from the sidebar)
 # --------------------------------------------------------------------------- #
@@ -458,8 +498,8 @@ lookback = hc2.radio("Kitne din dekhne hain", [7, 20, 50, "All"], index=1,
                      horizontal=True)
 st.divider()
 
-tab_stock, tab_chain, tab_overview = st.tabs(
-    ["📈 Stock (date-wise)", "⛓️ Option chain", "📊 Overview (50 stocks)"])
+tab_stock, tab_chain, tab_fii, tab_overview = st.tabs(
+    ["📈 Stock (date-wise)", "⛓️ Option chain", "🏦 FII/DII", "📊 Overview"])
 
 # =========================================================================== #
 # TAB 1 — date-wise stock view
@@ -615,7 +655,39 @@ with tab_chain:
             st.caption(f"{len(raw)} rows · value_lakh column = turnover in raw ₹")
 
 # =========================================================================== #
-# TAB 3 — overview (all 50 stocks stats)
+# TAB — FII / DII / Pro / Client participant OI & Volume
+# =========================================================================== #
+with tab_fii:
+    st.subheader("FII / DII / Pro / Client — F&O positions")
+    pdates = q("SELECT DISTINCT date FROM participant ORDER BY date DESC")["date"].tolist()
+    if not pdates:
+        st.info("Participant data abhi nahi. `python fetch_participant.py` chalao "
+                "(ya run_daily.py).")
+    else:
+        pdate = st.selectbox("Date", pdates, index=0)
+        st.caption("Net = Long − Short (contracts). "
+                   "Green = net long (bullish), red = net short (bearish). "
+                   "FII/DII ka rukh market sentiment dikhata hai.")
+
+        st.markdown("#### Open Interest (positions held)")
+        oi = q("SELECT * FROM participant WHERE date=? AND metric='oi'", (pdate,))
+        st.markdown(render_participant(oi), unsafe_allow_html=True)
+
+        st.markdown("#### Trading Volume (contracts traded)")
+        vol = q("SELECT * FROM participant WHERE date=? AND metric='vol'", (pdate,))
+        st.markdown(render_participant(vol), unsafe_allow_html=True)
+
+        with st.expander("📋 Full raw data (saare 14 columns)"):
+            raw = q("SELECT metric,client_type,fut_idx_long,fut_idx_short,"
+                    "fut_stk_long,fut_stk_short,opt_idx_call_long,opt_idx_put_long,"
+                    "opt_idx_call_short,opt_idx_put_short,opt_stk_call_long,"
+                    "opt_stk_put_long,opt_stk_call_short,opt_stk_put_short,"
+                    "total_long,total_short FROM participant WHERE date=? "
+                    "ORDER BY metric,client_type", (pdate,))
+            st.dataframe(raw, width="stretch", hide_index=True)
+
+# =========================================================================== #
+# TAB — overview (all-stock math stats)
 # =========================================================================== #
 with tab_overview:
     st.subheader("50 stocks — math stats")

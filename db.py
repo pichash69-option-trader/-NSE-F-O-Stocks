@@ -77,6 +77,22 @@ CREATE INDEX IF NOT EXISTS idx_prices_date   ON prices(date);
 CREATE INDEX IF NOT EXISTS idx_futures_date  ON futures(date);
 CREATE INDEX IF NOT EXISTS idx_options_date  ON options(date);
 CREATE INDEX IF NOT EXISTS idx_options_chain ON options(symbol, date, expiry);
+
+-- PARTICIPANT-wise OI & Volume (FII / DII / Pro / Client) in equity derivatives
+CREATE TABLE IF NOT EXISTS participant (
+    date TEXT NOT NULL,
+    metric TEXT NOT NULL,          -- 'oi' or 'vol'
+    client_type TEXT NOT NULL,     -- Client / DII / FII / Pro / TOTAL
+    fut_idx_long INTEGER, fut_idx_short INTEGER,
+    fut_stk_long INTEGER, fut_stk_short INTEGER,
+    opt_idx_call_long INTEGER, opt_idx_put_long INTEGER,
+    opt_idx_call_short INTEGER, opt_idx_put_short INTEGER,
+    opt_stk_call_long INTEGER, opt_stk_put_long INTEGER,
+    opt_stk_call_short INTEGER, opt_stk_put_short INTEGER,
+    total_long INTEGER, total_short INTEGER,
+    PRIMARY KEY (date, metric, client_type)
+);
+CREATE INDEX IF NOT EXISTS idx_participant_date ON participant(date);
 """
 
 
