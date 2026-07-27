@@ -149,23 +149,29 @@ def equity_stats(prices):
 # F&O math
 # --------------------------------------------------------------------------- #
 def fno_stats():
-    """PCR, total OI, OI change, futures premium per symbol (latest F&O date)."""
+    """PCR, total OI, OI change, futures premium per symbol (latest F&O date).
+
+    Only the latest day is loaded (via SQL) — loading the whole options table
+    (millions of rows) blew up memory and got OOM-killed on small servers.
+    """
     conn = db.connect()
     try:
-        opt = pd.read_sql_query(
-            "SELECT symbol,date,expiry,strike,opt_type,oi,chg_oi FROM options", conn)
-        fut = pd.read_sql_query(
-            "SELECT symbol,date,expiry,close,oi,chg_oi FROM futures", conn)
-        spot = pd.read_sql_query("SELECT symbol,date,close FROM prices", conn)
+        latest = conn.execute("SELECT MAX(date) FROM options").fetchone()[0]
+        if not latest:
+            return pd.DataFrame()
+        o = pd.read_sql_query(
+            "SELECT symbol,expiry,strike,opt_type,oi,chg_oi FROM options WHERE date=?",
+            conn, params=(latest,))
+        f = pd.read_sql_query(
+            "SELECT symbol,expiry,close,oi,chg_oi FROM futures WHERE date=?",
+            conn, params=(latest,))
+        s = pd.read_sql_query(
+            "SELECT symbol,close FROM prices WHERE date=?",
+            conn, params=(latest,)).set_index("symbol")["close"]
     finally:
         conn.close()
-    if opt.empty:
+    if o.empty:
         return pd.DataFrame()
-
-    latest = opt["date"].max()                   # use most recent F&O day
-    o = opt[opt["date"] == latest]
-    f = fut[fut["date"] == latest]
-    s = spot[spot["date"] == latest].set_index("symbol")["close"]
 
     rows = []
     for sym, g in o.groupby("symbol"):
