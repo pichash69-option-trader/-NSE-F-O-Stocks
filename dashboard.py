@@ -8,7 +8,7 @@ Design (per stock, date-wise / timeline):
   1. Stock — all data, day by day (OHLC, chg%, volume, delivery%) + close trend
   2. Option chain block:  SUM CHAIN (all expiries summed per strike)  +  each expiry chain
   3. Futures — all-expiry totals + change
-Plus an Overview tab: all 50 stocks' math stats.
+Plus an Overview tab: all F&O stocks' math stats.
 """
 import numpy as np
 import pandas as pd
@@ -19,7 +19,7 @@ import db
 import analysis
 from config import NIFTY50
 
-st.set_page_config(page_title="NSE NIFTY 50 — date-wise", layout="wide")
+st.set_page_config(page_title="NSE F&O — date-wise", layout="wide")
 
 # Help content — shown from the "?" icon in the top corner (popover).
 HELP_MD = """
@@ -520,7 +520,7 @@ def render_buildup_scan(df):
 # Top header (controls moved here from the sidebar)
 # --------------------------------------------------------------------------- #
 htitle, hqmark = st.columns([8, 1])
-htitle.markdown("### NSE NIFTY 50 — date-wise")
+htitle.markdown("### NSE F&O Stocks — date-wise")
 with hqmark.popover("❓", help="How to use — click karo"):
     st.markdown(HELP_MD)
 
@@ -787,7 +787,7 @@ with tab_pos:
 # TAB — overview (all-stock math stats)
 # =========================================================================== #
 with tab_overview:
-    st.subheader("50 stocks — math stats")
+    st.subheader("All F&O stocks — math stats")
     stats = q("""SELECT symbol, cum_return, cagr, ann_volatility, volatility,
                         sharpe, max_drawdown, beta, zscore, pct_rank_52w,
                         skew, kurtosis, daily_return, mean_return,
