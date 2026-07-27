@@ -131,6 +131,18 @@ def q(sql, params=()):
         conn.close()
 
 
+def date_slider(label, dates_desc, key, window=60):
+    """Slider over the most recent `window` trading days (default = latest).
+    Slide left = older. Falls back to a caption if only one date exists."""
+    recent = list(reversed(dates_desc[:window]))     # ascending, latest last
+    if not recent:
+        return None
+    if len(recent) == 1:
+        st.caption(f"{label}: {recent[0]}")
+        return recent[0]
+    return st.select_slider(label, options=recent, value=recent[-1], key=key)
+
+
 @st.cache_data(ttl=300)
 def all_symbols():
     """Stock list for the dropdown — whatever is actually in the DB (NIFTY 50
@@ -630,7 +642,7 @@ with tab_fut:
     if not ffdates:
         st.info(f"{symbol}: F&O data abhi nahi.")
     else:
-        fdate = st.selectbox("F&O date", ffdates, index=0, key="fut_tab_date")
+        fdate = date_slider("F&O date", ffdates, "fut_tab_date")
         fspot = q("SELECT close FROM prices WHERE symbol=? AND date=?", (symbol, fdate))
         fspot_px = float(fspot.iloc[0]["close"]) if not fspot.empty else None
 
@@ -665,8 +677,9 @@ with tab_chain:
     if not cdates:
         st.info(f"{symbol}: F&O data abhi nahi (Phase 2 backfill ke baad aayega).")
     else:
-        cc1, cc2 = st.columns([1, 2])
-        odate = cc1.selectbox("F&O date", cdates, index=0, key="chain_date")
+        cc1, cc2 = st.columns([2, 1])
+        with cc1:
+            odate = date_slider("F&O date", cdates, "chain_date")
         strike_win = cc2.slider("Strikes around ATM (± count, 0 = all)", 0, 25, 10)
         spot = q("SELECT close FROM prices WHERE symbol=? AND date=?",
                  (symbol, odate))
@@ -746,7 +759,7 @@ with tab_fii:
         st.info("Participant data abhi nahi. `python fetch_participant.py` chalao "
                 "(ya run_daily.py).")
     else:
-        pdate = st.selectbox("Date", pdates, index=0)
+        pdate = date_slider("Date", pdates, "fii_date")
         st.caption("Net = Long − Short (contracts). "
                    "Green = net long (bullish), red = net short (bearish). "
                    "FII/DII ka rukh market sentiment dikhata hai.")
@@ -777,7 +790,7 @@ with tab_pos:
     if not pos_dates:
         st.info("F&O data abhi nahi.")
     else:
-        ldate = st.selectbox("Date", pos_dates, index=0, key="pos_date")
+        ldate = date_slider("Date", pos_dates, "pos_date")
 
         # --- Real OI buildup ---
         st.markdown("#### Real OI buildup — price + OI change (reliable)")
