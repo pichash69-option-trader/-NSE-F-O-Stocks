@@ -176,12 +176,6 @@ def fno_dates(symbol):
              (symbol,))["date"].tolist()
 
 
-def arrow(v):
-    if v is None or (isinstance(v, float) and np.isnan(v)):
-        return ""
-    return "▲" if v > 0 else ("▼" if v < 0 else "")
-
-
 # --------------------------------------------------------------------------- #
 # Sensibull-style option chain (custom HTML/CSS)
 # --------------------------------------------------------------------------- #
