@@ -530,9 +530,147 @@ lookback = hc2.radio("Kitne din dekhne hain", [7, 20, 50, "All"], index=1,
                      horizontal=True)
 st.divider()
 
-tab_stock, tab_fut, tab_chain, tab_fii, tab_pos, tab_overview = st.tabs(
-    ["📈 Stock (date-wise)", "🔮 Futures", "⛓️ Option chain", "🏦 FII/DII",
-     "🎯 Positioning", "📊 Overview"])
+tab_all, tab_stock, tab_fut, tab_chain, tab_fii, tab_pos, tab_overview = st.tabs(
+    ["🔎 Full view", "📈 Stock (date-wise)", "🔮 Futures", "⛓️ Option chain",
+     "🏦 FII/DII", "🎯 Positioning", "📊 Overview"])
+
+# =========================================================================== #
+# TAB — Full view (selected stock ka SAB data ek page par)
+# =========================================================================== #
+with tab_all:
+    st.subheader(f"🔎 {symbol} — poora data (ek jagah)")
+    st.caption("Upar header se stock badlo — sab sections isi tab me update honge.")
+    _hist = stock_history(symbol)
+    if _hist.empty:
+        st.warning(f"{symbol}: koi data nahi.")
+    else:
+        _view = _hist if lookback == "All" else _hist.tail(int(lookback))
+        _lt = _view.iloc[-1]
+        # latest F&O date for this stock
+        _fd = q("SELECT MAX(date) d FROM futures WHERE symbol=?", (symbol,))["d"].iloc[0]
+        _spot = None
+        if _fd:
+            _sp = q("SELECT close FROM prices WHERE symbol=? AND date=?", (symbol, _fd))
+            _spot = float(_sp.iloc[0]["close"]) if not _sp.empty else None
+        _srow = q("SELECT * FROM stats WHERE symbol=?", (symbol,))
+
+        # --- Top metrics ---
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Close", f"{_lt['close']:.2f}", f"{_lt['chg_pct']:+.2f}%")
+        m2.metric("Volume", f"{_lt['volume']:,.0f}")
+        m3.metric("Delivery %", f"{_lt['deliv_pct']:.1f}"
+                  if pd.notna(_lt['deliv_pct']) else "—")
+        if not _srow.empty:
+            r0 = _srow.iloc[0]
+            m4.metric("Ann Vol", f"{r0['ann_volatility']*100:.1f}%")
+            m5.metric("Beta", f"{r0['beta']:.2f}")
+
+        # --- 1. Price (date-wise) + candle ---
+        st.markdown("#### 📈 Price — date-wise")
+        st.markdown(render_stock_table(_view), unsafe_allow_html=True)
+        _cv = _view.copy()
+        _hover = [
+            (f"{d}<br>O {o:.1f} H {h:.1f} L {l:.1f} C {c:.1f}"
+             f"<br>Chg {ch:+.2f}% · Vol {_fmt(vol)}"
+             + (f"<br>Deliv {dp:.1f}%" if pd.notna(dp) else ""))
+            for d, o, h, l, c, ch, vol, dp in zip(
+                _cv["date"], _cv["open"], _cv["high"], _cv["low"], _cv["close"],
+                _cv["chg_pct"], _cv["volume"], _cv["deliv_pct"])]
+        _fig = go.Figure(go.Candlestick(
+            x=_cv["date"], open=_cv["open"], high=_cv["high"], low=_cv["low"],
+            close=_cv["close"], increasing_line_color="#1faa6e",
+            decreasing_line_color="#e24b4a", increasing_fillcolor="#1faa6e",
+            decreasing_fillcolor="#e24b4a", text=_hover, hoverinfo="text", name=""))
+        _fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0),
+                           xaxis_rangeslider_visible=False, yaxis_title="Price")
+        _st = max(1, len(_cv) // 10)
+        _fig.update_xaxes(type="category", tickmode="array",
+                          tickvals=list(_cv["date"])[::_st])
+        st.plotly_chart(_fig, width="stretch")
+
+        if not _fd:
+            st.info("Is stock ka F&O data nahi (option chain / futures / buildup skip).")
+        else:
+            # --- 2. Futures ---
+            st.markdown(f"#### 🔮 Futures (teeno expiry) — {_fd}")
+            _fut = q("""SELECT expiry, open, high, low, close, settle,
+                              contracts, value_lakh, oi, chg_oi
+                       FROM futures WHERE symbol=? AND date=? ORDER BY expiry""",
+                     (symbol, _fd))
+            st.markdown(render_futures_table(_fut, _spot), unsafe_allow_html=True)
+
+            # --- 3. Option chain (sum, ATM ± 8 strikes) ---
+            st.markdown("#### ⛓️ Option chain (sum — ATM ke aas-paas)")
+            _sc = analysis.sum_chain(symbol, _fd)
+            if not _sc.empty:
+                for _c in ["oi_CE", "chg_oi_CE", "volume_CE",
+                           "oi_PE", "chg_oi_PE", "volume_PE"]:
+                    if _c not in _sc.columns:
+                        _sc[_c] = 0
+                _tot = _sc[["oi_CE", "oi_PE"]].sum()
+                _pcr = _tot["oi_PE"] / _tot["oi_CE"] if _tot["oi_CE"] else float("nan")
+                if _spot is not None:
+                    _s2 = _sc.sort_values("strike").reset_index(drop=True)
+                    _ai = int((_s2["strike"] - _spot).abs().argmin())
+                    _sc = _s2.iloc[max(0, _ai - 8):_ai + 9]
+                st.caption(f"spot {_spot:,.1f} · PCR {_pcr:.2f} · "
+                           f"CE OI {_fmt(_tot['oi_CE'])} · PE OI {_fmt(_tot['oi_PE'])}")
+                st.markdown(render_chain(_sc, _spot, has_ltp=False),
+                            unsafe_allow_html=True)
+
+            # --- 4. Estimated participant split + buildup ---
+            st.markdown("#### 🏦 Estimated participant split "
+                        "*(⚠️ proportional estimate)*")
+            _pmax = q("SELECT MAX(date) d FROM participant")["d"].iloc[0]
+            _part = q("SELECT client_type, fut_stk_long FROM participant WHERE date=? "
+                      "AND metric='oi' AND client_type IN ('FII','DII','Pro','Client')",
+                      (_pmax,))
+            _soi = q("SELECT SUM(oi) oi FROM futures WHERE symbol=? AND date=?",
+                     (symbol, _fd))
+            _stoi = float(_soi["oi"].iloc[0]) if not _soi.empty and pd.notna(_soi["oi"].iloc[0]) else 0
+            if not _part.empty and _stoi:
+                st.markdown(render_est_split(_part, _stoi), unsafe_allow_html=True)
+
+            st.markdown("#### 🎯 OI buildup (real)")
+            _p2 = q("SELECT close, prev_close FROM prices WHERE symbol=? AND date=?",
+                    (symbol, _fd))
+            _tchg = q("SELECT SUM(chg_oi) c, SUM(oi) o FROM futures "
+                      "WHERE symbol=? AND date=?", (symbol, _fd))
+            if not _p2.empty and not _tchg.empty and pd.notna(_p2.iloc[0]["prev_close"]):
+                _pc = (_p2.iloc[0]["close"] / _p2.iloc[0]["prev_close"] - 1) * 100
+                _oc = _tchg.iloc[0]["c"] or 0
+                _bu = classify_buildup(_pc, _oc)
+                _col = BUILDUP_COLOR.get(_bu, "#888")
+                st.markdown(f"price **{_pc:+.2f}%** · OI chg **{_oc:+,.0f}** · "
+                            f"OI **{_fmt(_tchg.iloc[0]['o'])}** → "
+                            f"<span style='color:{_col};font-weight:600;font-size:18px'>"
+                            f"{_bu}</span>", unsafe_allow_html=True)
+
+        # --- 5. Math stats ---
+        st.markdown("#### 📊 Math stats (poore period ke)")
+        if _srow.empty:
+            st.write("—")
+        else:
+            r = _srow.iloc[0]
+            def _sc_txt(v, f="{:+.2f}"):
+                if pd.isna(v):
+                    return "—"
+                c = "#1faa6e" if v >= 0 else "#e24b4a"
+                return f"<span style='color:{c}'>{f.format(v)}</span>"
+            st.markdown(
+                "<div style='font-size:13px;line-height:2'>"
+                f"Cumulative return: {_sc_txt(r['cum_return']*100, '{:+.1f}')}% · "
+                f"CAGR: {_sc_txt(r['cagr']*100, '{:+.1f}')}% · "
+                f"Ann volatility: {r['ann_volatility']*100:.1f}% · "
+                f"Sharpe: {_sc_txt(r['sharpe'])} · "
+                f"Max drawdown: <span style='color:#e24b4a'>{r['max_drawdown']*100:.1f}%</span> · "
+                f"Beta: {r['beta']:.2f} · "
+                f"Z-score: {_sc_txt(r['zscore'])} · "
+                f"52w %ile: {r['pct_rank_52w']:.0f} · "
+                f"Skew: {r['skew']:.2f} · Kurtosis: {r['kurtosis']:.2f} · "
+                f"PCR: {r['put_call_ratio']:.2f} · "
+                f"Futures premium: {_sc_txt(r['futures_premium'], '{:+.1f}')}"
+                "</div>", unsafe_allow_html=True)
 
 # =========================================================================== #
 # TAB 1 — date-wise stock view
