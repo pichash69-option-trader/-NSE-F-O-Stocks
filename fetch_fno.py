@@ -16,6 +16,7 @@ import zipfile
 from datetime import date, datetime, timedelta
 
 import db
+import holidays
 from config import (NIFTY50_SET, UNIVERSE, REQUEST_DELAY, START_DATE)
 from fetch_data import _get, daterange   # reuse HTTP + date helpers
 
@@ -101,20 +102,25 @@ def run(end=None):
 
     print(f"F&O ingest: {len(todo)} day(s) pending ({start} -> {end})")
     conn = db.connect()
-    ok = hol = err = 0
+    ok = hol = pend = err = 0
     try:
         for d in todo:
             iso = d.strftime("%Y-%m-%d")
-            if d.weekday() >= 5:
+            if d.weekday() >= 5 or holidays.is_holiday(iso):
                 db.log_ingest("fno", iso, 0, "holiday")
                 hol += 1
                 continue
             try:
                 status, n = ingest_fno_day(conn, d)
+                if status == "holiday":          # 404 on a trading day = not published yet
+                    status = "pending"
                 db.log_ingest("fno", iso, n, status)
                 if status == "ok":
                     ok += 1
                     print(f"  {iso}  {n:5d} F&O rows")
+                elif status == "pending":
+                    pend += 1
+                    print(f"  {iso}  pending (NSE data not published yet)")
                 else:
                     hol += 1
             except Exception as e:
@@ -124,7 +130,7 @@ def run(end=None):
             time.sleep(REQUEST_DELAY)
     finally:
         conn.close()
-    print(f"Done. trading-days={ok}  skipped={hol}  errors={err}")
+    print(f"Done. ok={ok}  holiday={hol}  pending={pend}  errors={err}")
 
 
 if __name__ == "__main__":

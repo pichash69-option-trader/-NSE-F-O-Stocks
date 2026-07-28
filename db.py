@@ -118,22 +118,19 @@ def last_ingested_date(dataset):
         conn.close()
 
 
-def done_dates(dataset, retry_holiday_days=5):
-    """Set of dates already completed — a run skips these and retries the rest.
+def done_dates(dataset):
+    """Set of dates already completed ('ok' data or a real 'holiday').
 
-    RECENT 'holiday' days (within `retry_holiday_days`) are deliberately NOT
-    treated as done, because NSE sometimes publishes a day's files late: a run
-    that hit a 404 earlier marked the day 'holiday', but the data may be there
-    now. Re-checking the last few days picks it up. Old holidays (weekends /
-    real NSE holidays) stay skipped. 'error' days are always retried too."""
-    from datetime import date, timedelta
-    cutoff = (date.today() - timedelta(days=retry_holiday_days)).strftime("%Y-%m-%d")
+    'pending' (a trading day whose NSE files weren't published yet) and 'error'
+    days are NOT included, so every run retries them until the data appears —
+    no permanent gaps from late-published data. Real holidays are decided from
+    the NSE calendar (see holidays.py) before fetching, so they never get stuck
+    as 'pending'."""
     conn = connect()
     try:
         rows = conn.execute(
-            "SELECT date FROM ingest_log WHERE dataset=? AND "
-            "(status='ok' OR (status='holiday' AND date < ?))",
-            (dataset, cutoff),
+            "SELECT date FROM ingest_log WHERE dataset=? AND status IN ('ok','holiday')",
+            (dataset,),
         ).fetchall()
         return {r[0] for r in rows}
     finally:

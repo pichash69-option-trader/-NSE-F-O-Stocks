@@ -21,6 +21,7 @@ import requests
 
 import db
 import universe
+import holidays
 from config import (HEADERS, NIFTY50_SET, UNIVERSE, REQUEST_DELAY,
                     REQUEST_TIMEOUT, MAX_RETRIES, START_DATE)
 
@@ -182,20 +183,26 @@ def run(end=None):
 
     print(f"Equity ingest: {len(todo)} day(s) pending ({start} -> {end})")
     conn = db.connect()
-    ok = hol = err = 0
+    ok = hol = pend = err = 0
     try:
         for d in todo:
-            if d.weekday() >= 5:                 # Sat/Sun: skip without a request
-                db.log_ingest("equity", d.strftime("%Y-%m-%d"), 0, "holiday")
+            iso = d.strftime("%Y-%m-%d")
+            if d.weekday() >= 5 or holidays.is_holiday(iso):    # real holiday
+                db.log_ingest("equity", iso, 0, "holiday")
                 hol += 1
                 continue
-            iso = d.strftime("%Y-%m-%d")
             try:
                 status, n = ingest_equity_day(conn, d)
+                # trading day but NSE returned 404 => data not published yet
+                if status == "holiday":
+                    status = "pending"
                 db.log_ingest("equity", iso, n, status)
                 if status == "ok":
                     ok += 1
                     print(f"  {iso}  {n:2d} stocks")
+                elif status == "pending":
+                    pend += 1
+                    print(f"  {iso}  pending (NSE data not published yet)")
                 else:
                     hol += 1
             except Exception as e:
@@ -205,7 +212,7 @@ def run(end=None):
             time.sleep(REQUEST_DELAY)
     finally:
         conn.close()
-    print(f"Done. trading-days={ok}  skipped={hol}  errors={err}")
+    print(f"Done. ok={ok}  holiday={hol}  pending={pend}  errors={err}")
 
 
 if __name__ == "__main__":

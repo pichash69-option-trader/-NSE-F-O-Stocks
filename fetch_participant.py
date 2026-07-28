@@ -17,6 +17,7 @@ import time
 from datetime import date, datetime, timedelta
 
 import db
+import holidays
 from config import START_DATE, REQUEST_DELAY
 from fetch_data import _get, daterange
 
@@ -83,21 +84,23 @@ def run(end=None):
 
     print(f"Participant ingest: {len(todo)} day(s) pending ({start} -> {end})")
     conn = db.connect()
-    ok = hol = err = 0
+    ok = hol = pend = err = 0
     try:
         for d in todo:
             iso = d.strftime("%Y-%m-%d")
-            if d.weekday() >= 5:
+            if d.weekday() >= 5 or holidays.is_holiday(iso):
                 db.log_ingest("participant", iso, 0, "holiday")
                 hol += 1
                 continue
             try:
                 status, n = ingest_participant_day(conn, d)
+                if status == "holiday":          # 404 on a trading day = not published yet
+                    status = "pending"
                 db.log_ingest("participant", iso, n, status)
                 if status == "ok":
                     ok += 1
-                else:
-                    hol += 1
+                elif status == "pending":
+                    pend += 1
             except Exception as e:
                 err += 1
                 db.log_ingest("participant", iso, 0, "error")
@@ -105,7 +108,7 @@ def run(end=None):
             time.sleep(REQUEST_DELAY)
     finally:
         conn.close()
-    print(f"Done. trading-days={ok}  skipped={hol}  errors={err}")
+    print(f"Done. ok={ok}  holiday={hol}  pending={pend}  errors={err}")
 
 
 if __name__ == "__main__":
