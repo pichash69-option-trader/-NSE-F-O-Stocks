@@ -545,11 +545,8 @@ with tab_all:
         st.warning(f"{symbol}: koi data nahi.")
     else:
         _lt = _hist.iloc[-1]                         # latest day (for metrics)
-        _fd = q("SELECT MAX(date) d FROM futures WHERE symbol=?", (symbol,))["d"].iloc[0]
-        _spot = None
-        if _fd:
-            _sp = q("SELECT close FROM prices WHERE symbol=? AND date=?", (symbol, _fd))
-            _spot = float(_sp.iloc[0]["close"]) if not _sp.empty else None
+        _fdates = q("SELECT DISTINCT date FROM futures WHERE symbol=? "
+                    "ORDER BY date DESC", (symbol,))["date"].tolist()
         _srow = q("SELECT * FROM stats WHERE symbol=?", (symbol,))
 
         # --- Top metrics (latest) ---
@@ -562,6 +559,14 @@ with tab_all:
             r0 = _srow.iloc[0]
             m4.metric("Ann Vol", f"{r0['ann_volatility']*100:.1f}%")
             m5.metric("Beta", f"{r0['beta']:.2f}")
+
+        # --- F&O date slider (futures / option chain / buildup / split ke liye) ---
+        _fd = _spot = None
+        if _fdates:
+            _fd = date_slider("📅 F&O date (futures / option chain / buildup)",
+                              _fdates, "fullview_fdate")
+            _sp = q("SELECT close FROM prices WHERE symbol=? AND date=?", (symbol, _fd))
+            _spot = float(_sp.iloc[0]["close"]) if not _sp.empty else None
 
         # --- 🎯 OI buildup (real) — metrics ke turant neeche ---
         if _fd:
