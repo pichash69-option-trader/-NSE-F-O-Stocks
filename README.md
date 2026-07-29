@@ -1,9 +1,10 @@
-# NSE NIFTY 50 — Date-wise Dashboard
+# 📈 NSE F&O Stocks — Date-wise Dashboard
 
-A self-hosted, date-wise data analysis dashboard for the **NIFTY 50** stocks, built
-entirely on **free official NSE data**. See how each stock has changed **day by day** —
-prices, delivery, futures, and a full **Sensibull-style option chain** — plus pure
-statistical analysis (no technical indicators).
+A self-hosted, **date-wise** data analysis dashboard for the **entire NSE F&O universe
+(~210 stocks)**, built entirely on **free official NSE data**. See how each stock has
+changed **day by day** — prices, delivery, all futures expiries, a full **Sensibull-style
+option chain**, and **FII/DII positioning** — with pure **statistical analysis
+(no technical indicators)**, wrapped in a premium dark UI.
 
 > ⚠️ **Educational / research use only.** This is not investment advice. Do your own
 > research; trade at your own risk. The author is not a registered investment adviser.
@@ -12,23 +13,34 @@ statistical analysis (no technical indicators).
 
 ## ✨ Features
 
-- **50 NIFTY stocks**, all data sourced directly from NSE (official bhavcopy archives).
+- **~210 F&O stocks**, all data sourced directly from NSE (official bhavcopy archives) —
+  the F&O universe is derived automatically from the latest F&O bhavcopy.
 - **Date-wise / timeline view** — pick a stock and a window (7 / 20 / 50 / All days) and
-  see how everything evolved, latest day on top.
-- **Stock table + candlestick chart** — OHLC, % change, volume, turnover, trades,
-  delivery %; hover any candle for full details. Split/bonus-adjusted automatically.
-- **Futures** — all three expiries (near/next/far): OHLC, settle, premium, OI, change, value.
-- **Option chain (Sensibull-style)** — ITM shading, OI bars, ATM highlight, PCR, max pain;
-  a combined "sum chain" across expiries plus each expiry's own chain; raw full-data table.
-- **Overview** — all 50 stocks' math stats in one sortable table.
+  see how everything evolved, latest day on top. Date sliders for fast scrubbing.
+- **7 sections** in a sidebar-navigation, glassmorphism UI (Outfit font, indigo/purple
+  premium theme, live top-movers ticker):
+
+| Section | What it shows |
+|---|---|
+| 🔎 **Full view** | One stock's entire picture on a single page — metrics, OI buildup, math stats, futures, option chain, participant split |
+| 📈 **Stock (date-wise)** | Day-by-day OHLC, % change, volume, turnover, trades, delivery %; candlestick chart (hover for detail); split/bonus-adjusted |
+| 🔮 **Futures** | All three expiries (near/next/far): OHLC, settle, premium, OI + change, value, Σ total |
+| ⛓️ **Option chain** | Sensibull-style — ITM shading, OI bars, ATM highlight, PCR, max pain; a combined "sum chain" across expiries + each expiry's own chain + raw full-data table |
+| 🏦 **FII/DII** | Participant-wise (FII / DII / Pro / Client) F&O open interest & volume, net long/short |
+| 🎯 **Positioning** | Real OI buildup (Long/Short Buildup, Short Covering, Long Unwinding) + market-wide scan/filter |
+| 📊 **Overview** | All ~210 stocks' math stats in one sortable, scrollable table (sticky header + symbol) |
+
 - **Auto-updating** — one command backfills from 1-Jan-2024 to today, then daily incremental.
+- **Holiday-aware fetching** — uses the NSE trading calendar, retries late-published data,
+  so there are no permanent gaps.
 
 ## 📊 Analysis (pure math — no indicators)
 
-Returns (daily / log / cumulative), volatility (annualized), variance, Sharpe-type ratio,
-max drawdown, beta (vs equal-weighted market proxy), correlation, z-score, 52-week
-percentile, CAGR, skewness, kurtosis, delivery-ratio trend — and for F&O: Put-Call Ratio,
-total OI, OI change, futures premium/discount, max pain, and a strike-wise "sum chain".
+Returns (daily / cumulative / CAGR / mean), volatility (daily + annualized), Sharpe-type
+ratio, max drawdown, beta (vs an equal-weighted ~210-stock market proxy ≈ NIFTY),
+z-score, 52-week percentile, skewness, kurtosis, delivery %, — and for F&O: Put-Call
+Ratio, total OI, OI change, futures premium/discount, max pain, and a strike-wise
+"sum chain". **Every formula and its meaning is documented in [`GUIDE.md`](GUIDE.md).**
 
 ## 🛠️ Tech stack
 
@@ -46,8 +58,8 @@ Download from [python.org](https://www.python.org/downloads/). On Windows, tick
 
 **2. Get the code**
 ```bash
-git clone https://github.com/pichash69-option-trader/nifty50-equity-fno-dashboard.git
-cd nifty50-equity-fno-dashboard
+git clone https://github.com/pichash69-option-trader/-NSE-F-O-Stocks.git
+cd ./-NSE-F-O-Stocks
 ```
 No git? Use the green **Code → Download ZIP** button on GitHub, extract it, and open a
 terminal in that folder.
@@ -63,52 +75,61 @@ python run_daily.py
 ```
 A fresh clone has no data, so this downloads everything from 1-Jan-2024 to today and
 creates `nse.db`.
-- Takes **~40–70 min** (F&O is the large part) and builds a **~1 GB** file.
+- Takes roughly **1–2 hours** (options across ~210 stocks are the large part) and builds
+  a **~4 GB** file.
 - Needs internet. **Resume-safe** — if it stops, just run it again to continue.
 
 **5. Launch the dashboard**
 ```bash
 streamlit run dashboard.py
 ```
-Opens at **http://localhost:8501**.
+Opens at **http://localhost:8501**. (On Windows you can also double-click `run_dashboard.bat`.)
 
 ### Everyday use
 | Task | Command |
 |------|---------|
 | Open the dashboard | `streamlit run dashboard.py` |
 | Stop it | `Ctrl + C` in the terminal |
-| Update to the latest day | `python run_daily.py` (now fast — only new days) |
+| Update to the latest day | `python run_daily.py` (fast — only new days) |
 
 > Only `run_daily.py` needs internet (to fetch data). Viewing the dashboard is fully local.
-> For hands-free daily updates, see [`task_scheduler_setup.txt`](task_scheduler_setup.txt).
 
-## 🔄 Daily auto-update (optional, Windows)
+## 🔄 Daily auto-update (optional)
 
-Schedule `run_daily.bat` to run daily after market close (~6:30 PM IST) via **Windows
-Task Scheduler** — step-by-step instructions in [`task_scheduler_setup.txt`](task_scheduler_setup.txt).
+- **Windows:** schedule `run_daily.bat` after market close (~6:30 PM IST) via **Task
+  Scheduler** — see [`task_scheduler_setup.txt`](task_scheduler_setup.txt).
+- **Linux / AWS EC2:** [`setup_server.sh`](setup_server.sh) sets up a venv + cron
+  (`@reboot` + daily) so the dashboard stays live and self-updates.
 
 ## 📁 Project structure
 
 ```
-config.py                 # 50 NIFTY symbols + settings
+config.py                 # universe (FNO) + settings
 db.py                     # SQLite schema + helpers
+universe.py               # derives the ~210 F&O symbols from the latest bhavcopy
+holidays.py               # NSE trading-holiday calendar (holiday-aware fetching)
 fetch_data.py             # equity + delivery (incremental)
 fetch_fno.py              # futures + options, all expiry/strike (incremental)
+fetch_participant.py      # FII / DII / Pro / Client OI & volume (incremental)
 analysis.py               # pure-math stats + F&O math (+ split/bonus adjustment)
-dashboard.py              # Streamlit UI (date-wise)
-run_daily.py              # fetch + analyse in one command (daily / backfill)
-run_daily.bat             # Task Scheduler entry point
-task_scheduler_setup.txt  # daily automation guide
-PLAN.md                   # full design notes
+dashboard.py              # Streamlit UI (date-wise, QuantCalc-style theme)
+.streamlit/config.toml    # premium dark theme (Outfit font, indigo/purple palette)
+run_daily.py              # fetch (equity→F&O→participant) + analyse in one command
+run_daily.bat             # Task Scheduler entry point (Windows)
+run_dashboard.bat         # one-click dashboard launcher (Windows)
+setup_server.sh           # Linux/AWS venv + cron setup
+task_scheduler_setup.txt  # Windows daily-automation guide
+GUIDE.md                  # full user guide — sections + every calculation explained
+PLAN.md                   # design notes
 ```
 
 ## 🗄️ Data source & licensing
 
 Data comes from NSE's public daily archive files (equity bhavcopy, security delivery /
-MTO, and F&O bhavcopy). These are free for **personal and educational** use. **Redistributing
-NSE data commercially (e.g. as a paid service) requires a separate licence/agreement with
-NSE** — this repo does not grant any rights to NSE's data. It ships **code only**; you
-generate your own `nse.db` locally.
+MTO, F&O bhavcopy, and NSCCL participant reports). These are free for **personal and
+educational** use. **Redistributing NSE data commercially (e.g. as a paid service)
+requires a separate licence/agreement with NSE** — this repo does not grant any rights to
+NSE's data. It ships **code only**; you generate your own `nse.db` locally.
 
 ## 📜 License
 
