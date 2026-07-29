@@ -112,6 +112,7 @@ fetch_data.py             # equity + delivery (incremental)
 fetch_fno.py              # futures + options, all expiry/strike (incremental)
 fetch_participant.py      # FII / DII / Pro / Client OI & volume (incremental)
 analysis.py               # pure-math stats + F&O math (+ split/bonus adjustment)
+cleanup_orphans.py        # remove exited-F&O stocks' orphaned F&O data + shrink DB
 dashboard.py              # Streamlit UI (date-wise, QuantCalc-style theme)
 .streamlit/config.toml    # premium dark theme (Outfit font, indigo/purple palette)
 run_daily.py              # fetch (equity→F&O→participant) + analyse in one command
