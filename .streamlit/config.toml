@@ -1,0 +1,46 @@
+# QuantCalc Pro-inspired dark premium theme (native Streamlit theming).
+# Colors/fonts only - app data & logic unchanged.
+[theme]
+base = "dark"
+
+# Core palette
+primaryColor           = "#6366f1"   # indigo — buttons, active elements, slider
+backgroundColor        = "#070a13"   # deep navy page background
+secondaryBackgroundColor = "#121a2f" # card / widget surface (glass-ish)
+textColor              = "#f3f4f6"   # primary text
+linkColor              = "#a855f7"   # purple accent
+borderColor            = "#1e2740"
+codeBackgroundColor    = "#0c1020"
+codeTextColor          = "#c4b5fd"
+
+# Semantic colors (badges, markdown, sparklines)
+greenColor  = "#10b981"
+redColor    = "#f43f5e"
+orangeColor = "#f59e0b"
+yellowColor = "#f59e0b"
+blueColor   = "#06b6d4"
+violetColor = "#a855f7"
+grayColor   = "#6b7280"
+
+# Chart colors (Plotly / Altair) — indigo→purple→cyan→green→rose family
+chartCategoricalColors = ["#6366f1", "#a855f7", "#06b6d4", "#10b981", "#f43f5e", "#f59e0b", "#9ca3af"]
+
+# Typography — Outfit, matching the reference
+font        = "Outfit:https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+headingFont = "Outfit:https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap"
+baseFontSize = 15
+headingFontWeights = [700, 700, 600, 600, 600, 600]
+
+# Shape
+baseRadius = "12px"
+buttonRadius = "10px"
+showWidgetBorder = true
+showSidebarBorder = true
+linkUnderline = false
+
+[theme.sidebar]
+backgroundColor          = "#0c1020"
+secondaryBackgroundColor = "#121a2f"
+textColor                = "#e5e7eb"
+borderColor              = "#1e2740"
+primaryColor             = "#6366f1"

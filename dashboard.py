@@ -21,64 +21,216 @@ from config import NIFTY50
 
 st.set_page_config(page_title="NSE F&O — date-wise", layout="wide")
 
-# Help content — shown from the "?" icon in the top corner (popover).
+# QuantCalc Pro-inspired layout & polish. Font/colors come from
+# .streamlit/config.toml; this adds the layout the reference uses — sidebar
+# navigation, live ticker bar, glass cards, gradient headers. Styling only —
+# data & logic unchanged.
+THEME_CSS = """
+<style>
+:root{
+  --qc-indigo:#6366f1; --qc-purple:#a855f7; --qc-cyan:#06b6d4;
+  --qc-success:#10b981; --qc-danger:#f43f5e;
+  --qc-card:rgba(18,26,47,.60); --qc-border:rgba(255,255,255,.08);
+  --qc-text2:#9ca3af; --qc-muted:#6b7280;
+}
+/* radial glow on the page like the reference content-body */
+[data-testid="stAppViewContainer"] > .main{
+  background:radial-gradient(circle at top right,rgba(99,102,241,.05),transparent 60%);}
+[data-testid="stHeader"]{background:transparent;}
+.block-container{padding-top:3.2rem;}
+
+/* ---------- Sidebar: logo + nav menu (QuantCalc style) ---------- */
+[data-testid="stSidebar"]{border-right:1px solid var(--qc-border);}
+.qc-logo{display:flex;align-items:center;gap:12px;margin:2px 0 22px;padding:2px;}
+.qc-logo .ico{width:42px;height:42px;border-radius:12px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--qc-indigo),var(--qc-purple));
+  display:flex;align-items:center;justify-content:center;color:#fff;
+  box-shadow:0 4px 14px rgba(99,102,241,.4);font-size:22px;}
+.qc-logo .txt{font-weight:800;font-size:18px;letter-spacing:.4px;line-height:1;}
+.qc-logo .pill{font-size:10px;font-weight:800;letter-spacing:.8px;color:#fff;
+  background:linear-gradient(90deg,var(--qc-indigo),var(--qc-purple));
+  padding:2px 6px;border-radius:5px;margin-left:6px;vertical-align:middle;}
+.qc-logo .sub{color:var(--qc-muted);font-size:11px;font-weight:500;margin-top:3px;}
+
+/* Turn ONLY the nav radio (key="navmenu") into QuantCalc menu-items;
+   the days radio (7/20/50/All) keeps normal Streamlit styling. */
+.st-key-navmenu div[role="radiogroup"]{gap:6px;}
+.st-key-navmenu label[data-testid="stRadioOption"]{
+  display:flex;align-items:center;width:100%;
+  padding:10px 14px;border-radius:10px;border:1px solid transparent;
+  color:var(--qc-text2);cursor:pointer;transition:all .2s;}
+.st-key-navmenu label[data-testid="stRadioOption"] p{
+  color:inherit;font-weight:600;font-size:.95rem;}
+.st-key-navmenu label[data-testid="stRadioOption"]:hover{
+  color:#f3f4f6;background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.05);}
+/* hide the actual radio circle — keep only the label text */
+.st-key-navmenu label[data-testid="stRadioOption"] > div > div > div:first-child{
+  display:none;}
+/* active item — indigo glow (Streamlit marks it data-selected) */
+.st-key-navmenu label[data-testid="stRadioOption"][data-selected="true"]{
+  color:#f3f4f6;background:rgba(99,102,241,.15);
+  border-color:rgba(99,102,241,.35);box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.qc-foot{margin-top:14px;padding-top:16px;border-top:1px solid var(--qc-border);
+  color:var(--qc-muted);font-size:12px;}
+.qc-foot .live{margin-top:8px;display:inline-block;background:rgba(16,185,129,.1);
+  color:var(--qc-success);font-weight:600;padding:5px 11px;border-radius:6px;font-size:11px;}
+
+/* ---------- Live ticker bar ---------- */
+.qc-ticker{display:flex;align-items:center;gap:16px;background:#0c1020;
+  border:1px solid var(--qc-border);border-radius:12px;padding:8px 14px;
+  margin-bottom:8px;overflow-x:auto;white-space:nowrap;}
+.qc-ticker:last-of-type{margin-bottom:16px;}
+.qc-ticker .lbl{flex-shrink:0;color:#fff;font-weight:700;font-size:10px;
+  letter-spacing:.6px;padding:3px 9px;border-radius:5px;}
+.qc-ticker .lbl-up{background:linear-gradient(135deg,var(--qc-success),var(--qc-cyan));
+  box-shadow:0 2px 8px rgba(16,185,129,.25);}
+.qc-ticker .lbl-dn{background:linear-gradient(135deg,var(--qc-danger),var(--qc-purple));
+  box-shadow:0 2px 8px rgba(244,63,94,.25);}
+.qc-ticker .it{color:var(--qc-text2);font-size:12.5px;font-weight:500;flex-shrink:0;}
+.qc-ticker .it b{color:#f3f4f6;font-weight:600;margin:0 5px;}
+.qc-ticker .up{color:var(--qc-success);background:rgba(16,185,129,.1);
+  padding:1px 6px;border-radius:4px;font-weight:700;font-size:11px;}
+.qc-ticker .dn{color:var(--qc-danger);background:rgba(244,63,94,.1);
+  padding:1px 6px;border-radius:4px;font-weight:700;font-size:11px;}
+
+/* ---------- Headers / cards ---------- */
+.qc-title{font-weight:800;font-size:29px;letter-spacing:-.5px;line-height:1.15;margin:0;
+  background:linear-gradient(90deg,#f3f4f6,#99a5ff);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;}
+.qc-sub{color:var(--qc-text2);font-size:14px;margin:4px 0 6px;}
+[data-testid="stMetric"]{
+  background:var(--qc-card);border:1px solid var(--qc-border);
+  border-radius:16px;padding:12px 14px;backdrop-filter:blur(12px);
+  box-shadow:0 1px 0 rgba(255,255,255,.03) inset,0 8px 24px -12px rgba(0,0,0,.6);}
+[data-testid="stMetric"]:hover{border-color:rgba(99,102,241,.45);}
+[data-testid="stMetricLabel"] p{color:var(--qc-text2);font-weight:500;font-size:.78rem;
+  text-transform:uppercase;letter-spacing:.4px;}
+[data-testid="stMetricValue"]{font-size:1.55rem;line-height:1.2;font-weight:700;}
+/* Section sub-headers get an accent bar */
+h4{border-left:3px solid var(--qc-indigo);padding-left:10px;}
+hr{border-color:var(--qc-border);}
+</style>
+"""
+st.markdown(THEME_CSS, unsafe_allow_html=True)
+
+# Help content — shown from the "❓ How to use" popover in the sidebar.
 HELP_MD = """
 ## 👋 Dashboard kaise use karein
 
 Ye dashboard **F&O stocks (~210)** ka NSE data **date-wise** (din-b-din) dikhata hai —
-equity + futures + options + FII/DII, sab. Sab data seedha NSE se, roz auto-update.
+equity + futures + options + FII/DII, sab. Data seedha NSE se, roz auto-update. Saari
+analysis **pure maths / stats** hai — **koi technical indicator nahi**.
 
-> ⚠️ Ye **educational / research** tool hai — investment advice nahi.
+> ⚠️ **Educational / research** tool hai — investment advice **nahi**.
 
 ---
 
 ### 🧭 Shuru kaise karein
-1. **Upar header** me se ek **stock** choose karo (jaise RELIANCE).
+1. **Left sidebar** me se ek **stock** choose karo (jaise RELIANCE).
 2. **"Kitne din dekhne hain"** — 7 / 20 / 50 / All chuno.
-3. Neeche **6 tabs** me apna data dekho (date-wale tabs me **slider** se din badlo — fast scrub).
+3. Sidebar ke **menu** (7 sections) me data dekho (date-wale sections me **slider** se din badlo).
+
+Upar **ticker** = us din ke **Top 5 gainers** (green) + **Top 5 losers** (red), EOD data se.
 
 ---
 
-### 📈 Stock (date-wise)
-Har din ek row: **OHLC, Chg%** (green/red pill), **Volume & Delivery%** (bars),
-**Turnover ₹Cr, Trades**. Neeche **candle chart** — kisi candle par hover = poori detail.
-🟢 up din · 🔴 down din. (Delivery% high = real buying, sirf speculation nahi.)
+## 🗂️ Sections (7)
 
-### 🔮 Futures
-1. **Teeno expiry** (near/next/far) ka total + changes — OHLC, Settle, **Premium**
-   (future − spot; +ve = bullish hint), **OI + Chg OI** (bars/colors), Σ TOTAL row.
-2. **Estimated participant split** — ⚠️ ye *estimate* hai (real per-stock FII/DII data
-   publicly nahi milta), rough idea ke liye.
+**🔎 Full view** — Selected stock ka **saara data ek page par**: top metrics
+(Close, Volume, Delivery %, Ann Vol, Beta) → OI buildup → Math stats → Futures →
+Option chain → Estimated participant split. "Ek nazar me poori kahani."
 
-### ⛓️ Option chain (Sensibull style)
-- **Σ Sum chain** — teeno expiry ka har strike par total. Phir **har expiry ka apna chain**.
-- 🟧 CALLS ITM shaded · 🟥 PUTS ITM shaded · 🔵 **ATM** row · ChgOI green = OI add, red = cut.
-- **Strikes ± slider** se kitne strikes dikhane control karo. **Max pain** heading me.
-- **PCR** = Put OI ÷ Call OI (>1 = zyada puts/bearish, <1 = bullish).
+**📈 Stock (date-wise)** — Har din ek row: OHLC, **Chg%** (green/red pill),
+**Volume & Delivery%** (bars), Turnover ₹Cr, Trades. Neeche **candle chart** (hover = detail).
+🟢 up din · 🔴 down din.
 
-### 🏦 FII/DII
-**FII / DII / Pro / Client** ka F&O positioning (OI + Volume). **Net = Long − Short**:
-🟢 net long (bullish), 🔴 net short (bearish). Ye market ka **overall** rukh dikhata hai
-(saare stocks ka jod — per-stock nahi).
+**🔮 Futures** — Teeno expiry (near/next/far) ka total + changes: OHLC, Settle,
+**Premium** (future − spot), **OI + Chg OI**, Σ TOTAL. Plus estimated participant split.
 
-### 🎯 Positioning
-**Real OI buildup** (price + OI change se) — har stock ka:
-- Price ↑ + OI ↑ = **Long Buildup** (bulls) · Price ↓ + OI ↑ = **Short Buildup** (bears)
-- Price ↑ + OI ↓ = **Short Covering** · Price ↓ + OI ↓ = **Long Unwinding**
-Market scan + filter — kaunse stocks me kaunsa buildup ho raha, ek nazar me.
+**⛓️ Option chain** — **Σ Sum chain** (teeno expiry ka strike-wise total) + har expiry ka
+apna chain. 🟧 CALLS ITM · 🟥 PUTS ITM · 🔵 **ATM** row · ChgOI green = OI add, red = cut.
+**Strikes ± slider** + **max pain** heading me.
 
-### 📊 Overview
-Saare stocks ka **math** ek table me — Return, Volatility, Sharpe, Max DD, Beta,
-Z-score, 52w %ile, Skew/Kurtosis, PCR, OI. **"Sort by"** se sort karo.
-(Sab stats **split/bonus-adjusted** hain.)
+**🏦 FII/DII** — FII / DII / Pro / Client ka F&O positioning (OI + Volume).
+**Net = Long − Short**: 🟢 net long (bullish), 🔴 net short (bearish). Ye **market-wide** hai.
+
+**🎯 Positioning** — **Real OI buildup** (price + OI change se) har stock ka + market scan/filter.
+
+**📊 Overview** — Saare ~210 stocks ka math ek table me. **Sort by** se compare karo.
+Symbol + header pinned; right scroll = saare 18 columns.
 
 ---
 
-### 🔄 Data update
-Har trading din **market close ke baad (~6:30 PM IST)** naya data auto-add hota hai.
-Weekend/holiday skip. Latest din upar.
+## 🧮 Calculations — formula + matlab
+
+Sab **split/bonus-adjusted**. Daily return `r = aaj close / kal close − 1`.
+
+**Returns**
+
+| Metric | Formula | Matlab |
+|---|---|---|
+| Daily return | `close_today/close_yest − 1` | Us din ka move |
+| Cumulative return | `close_last/close_first − 1` | Poore period ka total |
+| CAGR | `(last/first)^(365/days) − 1` | Per-year (annualized) growth |
+| Mean return | daily returns ka average | Rozana average move |
+
+**Risk / volatility**
+
+| Metric | Formula | Matlab |
+|---|---|---|
+| Volatility | daily returns ka **std dev** | Roz kitna up-down (risk) |
+| Ann. volatility | `daily vol × √252` | Saal-bhar swing %. **High = risky** |
+| Sharpe | `mean return / vol` (rf=0) | Risk-adjusted return. Zyada = better |
+| Max drawdown | `min(close/peak − 1)` | Peak se sabse bada gir (worst case) |
+| Beta | `cov(stock,mkt)/var(mkt)` | β>1 = market se zyada swingy (mkt = ~210 stocks avg = NIFTY proxy) |
+
+**Statistics**
+
+| Metric | Formula | Matlab |
+|---|---|---|
+| Z-score | `(last − avg)/std` (close) | Price average se kitne SD door. +2 mehenga, −2 sasta (stat only) |
+| 52-week %ile | 252 din me kitne % din close aaj se neeche | 90 = 52w-high paas · 10 = 52w-low paas |
+| Skew | returns ka skewness | +ve = up moves zyada, −ve = crash-prone |
+| Kurtosis | returns ka kurtosis | High = extreme moves (fat tails) |
+| Delivery % | `deliv qty/total qty ×100` | High = real buying (intraday nahi) |
+
+**F&O math**
+
+| Metric | Formula | Matlab |
+|---|---|---|
+| PCR | `PE OI / CE OI` (total) | >1 puts zyada · <1 calls zyada (sentiment) |
+| Max pain | writer payout min wala strike | Expiry price aksar yahan khinchti (theory) |
+| Futures premium | `near future close − spot` | +ve bullish lean · −ve bearish lean |
+| Total OI | futures OI sum (all expiry) | Kitne contracts open |
+| OI change | Chg OI sum (all expiry) | Naye positions (+) ya band (−) |
+
+**OI Buildup** (price + OI change)
+
+| Price | OI | Buildup | Matlab |
+|---|---|---|---|
+| 🔼 | 🔼 | **Long Buildup** | Naye buyers — bullish |
+| 🔽 | 🔼 | **Short Buildup** | Naye sellers — bearish |
+| 🔼 | 🔽 | **Short Covering** | Sellers exit — up move |
+| 🔽 | 🔽 | **Long Unwinding** | Buyers exit — weakness |
+
+---
+
+## ⚠️ Notes
+
+- **Estimated participant split**: real per-stock FII/DII data publicly nahi milta, isliye
+  market-wide % ko stock ke futures OI par **proportionally** lagaya — **rough estimate**,
+  exact nahi. (FII/DII section ka data **real** hai, bas market-wide.)
+- **Split/bonus**: NSE prev_close adjust nahi hota; dashboard auto-detect karke adjust
+  karta hai (fake −90% move hataata). Ticker me `|move|>30%` drop hote hain.
+- **Sharpe** yahan simple `mean/std` (daily, rf=0) — thumb-rule comparison ke liye.
+
+## 🔄 Data update
+Har trading din market close ke baad (~**6:30 PM IST**) naya data auto-add. Weekend/holiday
+skip (late-publish par retry — koi gap nahi). Latest din upar.
 
 **Bas! Stock chuno, din chuno, explore karo.** 🚀
+
+*(Poori detailed guide project folder me `GUIDE.md` file me hai.)*
 """
 
 
@@ -139,24 +291,53 @@ def fno_dates(symbol):
              (symbol,))["date"].tolist()
 
 
+@st.cache_data(ttl=300)
+def ticker_html():
+    """Two-line movers ticker from the latest EOD NSE data:
+    line 1 = top-5 gainers, line 2 = top-5 losers (of that day)."""
+    latest = q("SELECT MAX(date) d FROM prices")["d"].iloc[0]
+    if not latest:
+        return ""
+    df = q("SELECT symbol, close, prev_close FROM prices WHERE date=?", (latest,))
+    df = df[(df["prev_close"] > 0) & df["close"].notna()].copy()
+    if df.empty:
+        return ""
+    df["chg"] = (df["close"] / df["prev_close"] - 1) * 100
+    # NSE prev_close isn't split/bonus-adjusted, so a split day shows a fake huge
+    # move — drop |chg| > 30% so those artifacts don't hijack the movers list.
+    df = df[df["chg"].abs() <= 30]
+    ups = df.sort_values("chg", ascending=False).head(5)
+    dns = df.sort_values("chg", ascending=True).head(5)
+
+    def row(label, lbl_cls, rows, cls):
+        items = [f'<span class="lbl {lbl_cls}">{label}</span>']
+        for _, r in rows.iterrows():
+            items.append(f'<span class="it">{r["symbol"]}<b>{r["close"]:,.1f}</b>'
+                         f'<span class="{cls}">{r["chg"]:+.2f}%</span></span>')
+        return '<div class="qc-ticker">' + "".join(items) + "</div>"
+
+    return (row(f"EOD · {latest}  ▲ TOP GAINERS", "lbl-up", ups, "up")
+            + row("▼ TOP LOSERS", "lbl-dn", dns, "dn"))
+
+
 # --------------------------------------------------------------------------- #
 # Sensibull-style option chain (custom HTML/CSS)
 # --------------------------------------------------------------------------- #
 CHAIN_CSS = """
 <style>
 .oc{width:100%;border-collapse:collapse;font-size:12px;font-family:var(--font,sans-serif);}
-.oc th{font-size:11px;color:#9aa0a6;font-weight:600;padding:6px 8px;text-align:right;}
-.oc td{padding:5px 8px;text-align:right;border-top:1px solid rgba(150,150,150,.18);position:relative;}
-.oc .stk{text-align:center;font-weight:600;background:rgba(130,130,130,.14);}
-.oc .itmce{background:rgba(240,159,39,.14);}
-.oc .itmpe{background:rgba(226,75,74,.12);}
-.oc tr.atm td{border-top:2px solid #378add;border-bottom:2px solid #378add;}
-.oc .up{color:#1faa6e;} .oc .dn{color:#e24b4a;}
+.oc th{font-size:11px;color:#9ca3af;font-weight:600;padding:6px 8px;text-align:right;}
+.oc td{padding:5px 8px;text-align:right;border-top:1px solid rgba(148,163,184,.18);position:relative;}
+.oc .stk{text-align:center;font-weight:600;background:rgba(148,163,184,.14);}
+.oc .itmce{background:rgba(245,158,11,.14);}
+.oc .itmpe{background:rgba(244,63,94,.12);}
+.oc tr.atm td{border-top:2px solid #6366f1;border-bottom:2px solid #6366f1;}
+.oc .up{color:#10b981;} .oc .dn{color:#f43f5e;}
 .oc .bar{position:absolute;top:3px;bottom:3px;opacity:.30;border-radius:3px;z-index:0;}
-.oc .bce{right:0;background:#e24b4a;} .oc .bpe{left:0;background:#1faa6e;}
+.oc .bce{right:0;background:#f43f5e;} .oc .bpe{left:0;background:#10b981;}
 .oc .v{position:relative;z-index:1;}
 .oc-h{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:12px;margin:2px 0 6px;}
-.oc-lg{font-size:11px;color:#9aa0a6;margin-bottom:6px;}
+.oc-lg{font-size:11px;color:#9ca3af;margin-bottom:6px;}
 .oc-lg b{color:inherit;}
 </style>
 """
@@ -228,19 +409,19 @@ def render_chain(df, spot, has_ltp, ltp_col_ce="close_CE", ltp_col_pe="close_PE"
     span = 4 if has_ltp else 3
     return (CHAIN_CSS +
             '<div style="overflow-x:auto"><table class="oc"><thead>'
-            f'<tr><th colspan="{span}" style="text-align:center;color:#ef9f27">CALLS</th>'
+            f'<tr><th colspan="{span}" style="text-align:center;color:#f59e0b">CALLS</th>'
             '<th class="stk">STRIKE</th>'
-            f'<th colspan="{span}" style="text-align:center;color:#e24b4a">PUTS</th></tr>'
+            f'<th colspan="{span}" style="text-align:center;color:#f43f5e">PUTS</th></tr>'
             f'<tr>{head_ce}<th class="stk">Strike</th>{head_pe}</tr>'
             '</thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
 CHAIN_LEGEND = ('<div class="oc-lg">'
-                '<b style="color:#ef9f27">▎</b> CALLS ITM shaded &nbsp; '
-                '<b style="color:#e24b4a">▎</b> PUTS ITM shaded &nbsp; '
-                '<b style="color:#1faa6e">▎</b> OI addition &nbsp; '
-                '<b style="color:#e24b4a">▎</b> OI reduction &nbsp; '
-                '<b style="color:#378add">━</b> ATM</div>')
+                '<b style="color:#f59e0b">▎</b> CALLS ITM shaded &nbsp; '
+                '<b style="color:#f43f5e">▎</b> PUTS ITM shaded &nbsp; '
+                '<b style="color:#10b981">▎</b> OI addition &nbsp; '
+                '<b style="color:#f43f5e">▎</b> OI reduction &nbsp; '
+                '<b style="color:#6366f1">━</b> ATM</div>')
 
 
 # --------------------------------------------------------------------------- #
@@ -249,23 +430,23 @@ CHAIN_LEGEND = ('<div class="oc-lg">'
 STOCK_CSS = """
 <style>
 .stbl{width:100%;border-collapse:collapse;font-size:12px;min-width:640px;}
-.stbl th{font-size:11px;color:#9aa0a6;font-weight:600;padding:6px 8px;text-align:right;}
+.stbl th{font-size:11px;color:#9ca3af;font-weight:600;padding:6px 8px;text-align:right;}
 .stbl th.l{text-align:left;} .stbl th.c{text-align:center;}
-.stbl td{padding:5px 8px;text-align:right;border-top:1px solid rgba(150,150,150,.16);}
-.stbl td.date{text-align:left;color:#c9cdd3;white-space:nowrap;}
-.stbl .up{color:#1faa6e;} .stbl .dn{color:#e24b4a;}
+.stbl td{padding:5px 8px;text-align:right;border-top:1px solid rgba(148,163,184,.16);}
+.stbl td.date{text-align:left;color:#cbd5e1;white-space:nowrap;}
+.stbl .up{color:#10b981;} .stbl .dn{color:#f43f5e;}
 .stbl .cl{font-weight:600;}
 .stbl .pill{display:inline-block;padding:1px 7px;border-radius:10px;font-weight:600;}
-.stbl .pu{background:rgba(31,170,110,.16);color:#1faa6e;}
-.stbl .pd{background:rgba(226,75,74,.16);color:#e24b4a;}
+.stbl .pu{background:rgba(16,185,129,.16);color:#10b981;}
+.stbl .pd{background:rgba(244,63,94,.16);color:#f43f5e;}
 .candle{position:relative;height:16px;width:150px;display:inline-block;vertical-align:middle;}
-.wick{position:absolute;top:7px;height:2px;background:#8a8f98;border-radius:2px;}
+.wick{position:absolute;top:7px;height:2px;background:#6b7280;border-radius:2px;}
 .body{position:absolute;top:3px;height:10px;border-radius:2px;}
 .bar-cell{position:relative;}
 .bar-bg{position:absolute;top:4px;bottom:4px;left:0;border-radius:3px;opacity:.28;}
-.bar-vol{background:#6f9fd8;} .bar-del{background:#1faa6e;}
+.bar-vol{background:#6366f1;} .bar-del{background:#10b981;}
 .bar-v{position:relative;z-index:1;}
-.stlg{font-size:11px;color:#9aa0a6;margin:2px 0 6px;}
+.stlg{font-size:11px;color:#9ca3af;margin:2px 0 6px;}
 </style>
 """
 
@@ -353,8 +534,8 @@ def render_overview_table(df):
             f'<td>{_fmt(r["total_oi"])}</td>'
             f'<td>{col(r["oi_change"], "{:+.0f}")}</td>'
             f'<td>{col(r["futures_premium"], "{:+.1f}")}</td></tr>')
-    return (STOCK_CSS +
-            '<div style="overflow-x:auto"><table class="stbl" style="min-width:1150px">'
+    return (STOCK_CSS + OVERVIEW_CSS +
+            '<div class="ovwrap"><table class="stbl ovtbl">'
             '<thead><tr>'
             '<th class="l">Symbol</th><th>Return%</th><th>CAGR%</th><th>Ann Vol</th>'
             '<th>Daily Vol</th><th>Sharpe</th><th>Max DD</th><th>Beta</th>'
@@ -362,6 +543,23 @@ def render_overview_table(df):
             '<th>Day Ret%</th><th>Mean Ret%</th><th>PCR</th><th>Total OI</th>'
             '<th>OI Chg</th><th>Fut Prem</th>'
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
+
+
+# Compact + clearly-scrollable styling for the wide 18-column overview table.
+OVERVIEW_CSS = """
+<style>
+.ovwrap{overflow-x:auto;overflow-y:auto;max-height:70vh;
+  border:1px solid rgba(255,255,255,.06);border-radius:10px;}
+.ovwrap::-webkit-scrollbar{height:10px;width:10px;}
+.ovwrap::-webkit-scrollbar-thumb{background:#6366f1;border-radius:6px;}
+.ovwrap::-webkit-scrollbar-track{background:rgba(255,255,255,.04);}
+.ovtbl{min-width:1080px;font-size:11.5px;}
+.ovtbl th{position:sticky;top:0;z-index:2;background:#0c1020;padding:6px 7px;}
+.ovtbl th.l{left:0;z-index:3;}
+.ovtbl td{padding:4px 7px;}
+.ovtbl td.date{position:sticky;left:0;background:#0c1020;z-index:1;}
+</style>
+"""
 
 
 def render_futures_table(fut, spot):
@@ -404,8 +602,8 @@ def render_futures_table(fut, spot):
         f'<td>{chg_pill(tchg)}</td>'
         f'<td>{_fmt(tcon)}</td><td>—</td></tr>')
     return (STOCK_CSS +
-            '<style>.stbl tr.tot td{border-top:2px solid #378add;font-weight:600;'
-            'background:rgba(55,138,221,.10);}</style>'
+            '<style>.stbl tr.tot td{border-top:2px solid #6366f1;font-weight:600;'
+            'background:rgba(99,102,241,.10);}</style>'
             '<div style="overflow-x:auto"><table class="stbl"><thead><tr>'
             '<th class="l">Expiry</th><th>Open</th><th>High</th><th>Low</th>'
             '<th>Close</th><th>Settle</th><th>Premium</th>'
@@ -444,8 +642,8 @@ def render_participant(df):
             f'<td>{_fmt(r["total_long"])}</td><td>{_fmt(r["total_short"])}</td>'
             f'<td>{net(tnet)}</td></tr>')
     return (STOCK_CSS +
-            '<style>.stbl tr.tot td{border-top:2px solid #378add;font-weight:600;'
-            'background:rgba(55,138,221,.10);}</style>'
+            '<style>.stbl tr.tot td{border-top:2px solid #6366f1;font-weight:600;'
+            'background:rgba(99,102,241,.10);}</style>'
             '<div style="overflow-x:auto"><table class="stbl"><thead><tr>'
             '<th class="l">Participant</th><th>Idx Fut net</th><th>Stk Fut net</th>'
             '<th>Idx Opt net</th><th>Stk Opt net</th>'
@@ -481,8 +679,8 @@ def render_est_split(part, stock_oi):
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
-BUILDUP_COLOR = {"Long Buildup": "#1faa6e", "Short Covering": "#5dcAa5",
-                 "Short Buildup": "#e24b4a", "Long Unwinding": "#f0997b"}
+BUILDUP_COLOR = {"Long Buildup": "#10b981", "Short Covering": "#34d399",
+                 "Short Buildup": "#f43f5e", "Long Unwinding": "#fb923c"}
 
 
 def classify_buildup(price_chg, oi_chg):
@@ -517,29 +715,46 @@ def render_buildup_scan(df):
 
 
 # --------------------------------------------------------------------------- #
-# Top header (controls moved here from the sidebar)
+# Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
-htitle, hqmark = st.columns([8, 1])
-htitle.markdown("### NSE F&O Stocks — date-wise")
-with hqmark.popover("❓", help="How to use — click karo"):
-    st.markdown(HELP_MD)
+SECTIONS = ["🔎 Full view", "📈 Stock (date-wise)", "🔮 Futures", "⛓️ Option chain",
+            "🏦 FII/DII", "🎯 Positioning", "📊 Overview"]
 
-hc1, hc2 = st.columns([1, 2])
-symbol = hc1.selectbox("Stock", all_symbols(), index=0)
-lookback = hc2.radio("Kitne din dekhne hain", [7, 20, 50, "All"], index=1,
-                     horizontal=True)
-st.divider()
+with st.sidebar:
+    st.markdown(
+        '<div class="qc-logo"><div class="ico">📈</div>'
+        '<div><div class="txt">NSE F&amp;O<span class="pill">PRO</span></div>'
+        '<div class="sub">date-wise analytics</div></div></div>',
+        unsafe_allow_html=True)
 
-tab_all, tab_stock, tab_fut, tab_chain, tab_fii, tab_pos, tab_overview = st.tabs(
-    ["🔎 Full view", "📈 Stock (date-wise)", "🔮 Futures", "⛓️ Option chain",
-     "🏦 FII/DII", "🎯 Positioning", "📊 Overview"])
+    # Stock controls — on top, above the navigation menu
+    symbol = st.selectbox("Stock", all_symbols(), index=0)
+    lookback = st.radio("Kitne din dekhne hain", [7, 20, 50, "All"], index=1,
+                        horizontal=True)
+
+    st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
+    section = st.radio("Navigation", SECTIONS, index=0,
+                       label_visibility="collapsed", key="navmenu")
+
+    with st.popover("❓ How to use", use_container_width=True):
+        st.markdown(HELP_MD)
+
+    st.markdown(
+        '<div class="qc-foot">Designed for traders &amp; researchers'
+        '<div class="live">● NSE data · auto-updated</div></div>',
+        unsafe_allow_html=True)
+
+# --------------------------------------------------------------------------- #
+# Main content — live ticker (page title removed; each section has its own header)
+# --------------------------------------------------------------------------- #
+st.markdown(ticker_html(), unsafe_allow_html=True)
 
 # =========================================================================== #
 # TAB — Full view (selected stock ka SAB data ek page par)
 # =========================================================================== #
-with tab_all:
+if section == "🔎 Full view":
     st.subheader(f"🔎 {symbol} — poora data (ek jagah)")
-    st.caption("Upar header se stock badlo — sab sections isi tab me update honge.")
+    st.caption("Sidebar se stock badlo — is page ke sab sections update ho jayenge.")
     _hist = stock_history(symbol)
     if _hist.empty:
         st.warning(f"{symbol}: koi data nahi.")
@@ -595,7 +810,7 @@ with tab_all:
             def _sc_txt(v, f="{:+.2f}"):
                 if pd.isna(v):
                     return "—"
-                c = "#1faa6e" if v >= 0 else "#e24b4a"
+                c = "#10b981" if v >= 0 else "#f43f5e"
                 return f"<span style='color:{c}'>{f.format(v)}</span>"
             st.markdown(
                 "<div style='font-size:13px;line-height:2'>"
@@ -603,7 +818,7 @@ with tab_all:
                 f"CAGR: {_sc_txt(r['cagr']*100, '{:+.1f}')}% · "
                 f"Ann volatility: {r['ann_volatility']*100:.1f}% · "
                 f"Sharpe: {_sc_txt(r['sharpe'])} · "
-                f"Max drawdown: <span style='color:#e24b4a'>{r['max_drawdown']*100:.1f}%</span> · "
+                f"Max drawdown: <span style='color:#f43f5e'>{r['max_drawdown']*100:.1f}%</span> · "
                 f"Beta: {r['beta']:.2f} · "
                 f"Z-score: {_sc_txt(r['zscore'])} · "
                 f"52w %ile: {r['pct_rank_52w']:.0f} · "
@@ -613,35 +828,6 @@ with tab_all:
                 "</div>", unsafe_allow_html=True)
 
         st.divider()
-
-        # --- Days slider — kitne din ka price data (fast scrub) ---
-        _maxd = len(_hist)
-        _days = st.slider("📅 Kitne din ka price data dekhna hai", 5,
-                          min(250, _maxd), min(20, _maxd), key="fullview_days")
-        _view = _hist.tail(_days)
-
-        # --- 📈 Price (date-wise) + candle ---
-        st.markdown("#### 📈 Price — date-wise")
-        st.markdown(render_stock_table(_view), unsafe_allow_html=True)
-        _cv = _view.copy()
-        _hover = [
-            (f"{d}<br>O {o:.1f} H {h:.1f} L {l:.1f} C {c:.1f}"
-             f"<br>Chg {ch:+.2f}% · Vol {_fmt(vol)}"
-             + (f"<br>Deliv {dp:.1f}%" if pd.notna(dp) else ""))
-            for d, o, h, l, c, ch, vol, dp in zip(
-                _cv["date"], _cv["open"], _cv["high"], _cv["low"], _cv["close"],
-                _cv["chg_pct"], _cv["volume"], _cv["deliv_pct"])]
-        _fig = go.Figure(go.Candlestick(
-            x=_cv["date"], open=_cv["open"], high=_cv["high"], low=_cv["low"],
-            close=_cv["close"], increasing_line_color="#1faa6e",
-            decreasing_line_color="#e24b4a", increasing_fillcolor="#1faa6e",
-            decreasing_fillcolor="#e24b4a", text=_hover, hoverinfo="text", name=""))
-        _fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0),
-                           xaxis_rangeslider_visible=False, yaxis_title="Price")
-        _st = max(1, len(_cv) // 10)
-        _fig.update_xaxes(type="category", tickmode="array",
-                          tickvals=list(_cv["date"])[::_st])
-        st.plotly_chart(_fig, width="stretch")
 
         if not _fd:
             st.info("Is stock ka F&O data nahi (option chain / futures skip).")
@@ -689,7 +875,7 @@ with tab_all:
 # =========================================================================== #
 # TAB 1 — date-wise stock view
 # =========================================================================== #
-with tab_stock:
+elif section == "📈 Stock (date-wise)":
     hist = stock_history(symbol)
     if hist.empty:
         st.warning(f"{symbol}: koi data nahi. Pehle fetch_data / fetch_fno chalao.")
@@ -725,8 +911,8 @@ with tab_stock:
         candle = go.Candlestick(
             x=cv["date"], open=cv["open"], high=cv["high"],
             low=cv["low"], close=cv["close"],
-            increasing_line_color="#1faa6e", decreasing_line_color="#e24b4a",
-            increasing_fillcolor="#1faa6e", decreasing_fillcolor="#e24b4a",
+            increasing_line_color="#10b981", decreasing_line_color="#f43f5e",
+            increasing_fillcolor="#10b981", decreasing_fillcolor="#f43f5e",
             text=hover, hoverinfo="text", name="")
         fig = go.Figure(candle)
         fig.update_layout(height=380, margin=dict(l=0, r=0, t=10, b=0),
@@ -739,12 +925,12 @@ with tab_stock:
                          tickmode="array",
                          tickvals=list(cv["date"])[::step])
         st.plotly_chart(fig, width="stretch")
-        st.caption("Futures 🔮 aur Option chain ⛓️ ab alag tabs me hain (upar).")
+        st.caption("Futures 🔮 aur Option chain ⛓️ sidebar ke alag sections me hain.")
 
 # =========================================================================== #
 # TAB — Futures (totals + estimated participant split)
 # =========================================================================== #
-with tab_fut:
+elif section == "🔮 Futures":
     st.subheader(f"{symbol} — futures")
     ffdates = q("SELECT DISTINCT date FROM futures WHERE symbol=? ORDER BY date DESC",
                 (symbol,))["date"].tolist()
@@ -780,7 +966,7 @@ with tab_fut:
 # =========================================================================== #
 # TAB — Option chain (Sensibull style)
 # =========================================================================== #
-with tab_chain:
+elif section == "⛓️ Option chain":
     st.subheader(f"{symbol} — option chain")
     cdates = fno_dates(symbol)
     if not cdates:
@@ -861,7 +1047,7 @@ with tab_chain:
 # =========================================================================== #
 # TAB — FII / DII / Pro / Client participant OI & Volume
 # =========================================================================== #
-with tab_fii:
+elif section == "🏦 FII/DII":
     st.subheader("FII / DII / Pro / Client — F&O positions")
     pdates = q("SELECT DISTINCT date FROM participant ORDER BY date DESC")["date"].tolist()
     if not pdates:
@@ -893,7 +1079,7 @@ with tab_fii:
 # =========================================================================== #
 # TAB — Positioning (estimated split + real OI buildup)
 # =========================================================================== #
-with tab_pos:
+elif section == "🎯 Positioning":
     st.subheader("Stock positioning")
     pos_dates = q("SELECT DISTINCT date FROM futures ORDER BY date DESC")["date"].tolist()
     if not pos_dates:
@@ -938,7 +1124,7 @@ with tab_pos:
 # =========================================================================== #
 # TAB — overview (all-stock math stats)
 # =========================================================================== #
-with tab_overview:
+elif section == "📊 Overview":
     st.subheader("All F&O stocks — math stats")
     stats = q("""SELECT symbol, cum_return, cagr, ann_volatility, volatility,
                         sharpe, max_drawdown, beta, zscore, pct_rank_52w,
