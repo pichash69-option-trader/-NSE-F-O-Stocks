@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-dashboard.py — date-wise NSE dashboard (Streamlit).
+dashboard.py — date-wise NSE dashboard (Streamlit), QuantCalc-style dark theme.
 
 Run:  streamlit run dashboard.py
 
-Design (per stock, date-wise / timeline):
-  1. Stock — all data, day by day (OHLC, chg%, volume, delivery%) + close trend
-  2. Option chain block:  SUM CHAIN (all expiries summed per strike)  +  each expiry chain
-  3. Futures — all-expiry totals + change
-Plus an Overview tab: all F&O stocks' math stats.
+Sidebar navigation = 5 data-type sections (each maps to a DB table):
+  1. Equity / Cash  — daily OHLCV + delivery + candle chart
+  2. Futures        — all expiries: OHLC/settle/OI/premium + Σ total
+  3. Options        — Sensibull sum-chain + per-expiry chains (OHLC/settle inside)
+  4. Participant    — FII/DII/Pro/Client sentiment (OI+Vol) + trend + flow
+  5. Math stats     — all-stock statistics table (returns/vol/beta/… + 1W/1M)
 """
 import numpy as np
 import pandas as pd
@@ -128,36 +129,31 @@ analysis **pure maths / stats** hai — **koi technical indicator nahi**.
 ### 🧭 Shuru kaise karein
 1. **Left sidebar** me se ek **stock** choose karo (jaise RELIANCE).
 2. **"Kitne din dekhne hain"** — 7 / 20 / 50 / All chuno.
-3. Sidebar ke **menu** (7 sections) me data dekho (date-wale sections me **slider** se din badlo).
+3. Sidebar ke **menu** (5 sections, data-type ke hisaab se) me data dekho
+   (date-wale sections me **slider** se din badlo).
 
 Upar **ticker** = us din ke **Top 5 gainers** (green) + **Top 5 losers** (red), EOD data se.
 
 ---
 
-## 🗂️ Sections (7)
+## 🗂️ Sections (5 — har ek ek data-type)
 
-**🔎 Full view** — Selected stock ka **saara data ek page par**: top metrics
-(Close, Volume, Delivery %, Ann Vol, Beta) → OI buildup → Math stats → Futures →
-Option chain → Estimated participant split. "Ek nazar me poori kahani."
-
-**📈 Stock (date-wise)** — Har din ek row: OHLC, **Chg%** (green/red pill),
-**Volume & Delivery%** (bars), Turnover ₹Cr, Trades. Neeche **candle chart** (hover = detail).
-🟢 up din · 🔴 down din.
+**📈 Equity / Cash** — Selected stock ka cash-market data, din-b-din: OHLC, **Chg%**
+(green/red pill), **Volume & Delivery%** (bars), Turnover ₹Cr, Trades. Neeche **candle
+chart** (hover = detail). 🟢 up din · 🔴 down din.
 
 **🔮 Futures** — Teeno expiry (near/next/far) ka total + changes: OHLC, Settle,
 **Premium** (future − spot), **OI + Chg OI**, Σ TOTAL. Plus estimated participant split.
 
-**⛓️ Option chain** — **Σ Sum chain** (teeno expiry ka strike-wise total) + har expiry ka
-apna chain. 🟧 CALLS ITM · 🟥 PUTS ITM · 🔵 **ATM** row · ChgOI green = OI add, red = cut.
-**Strikes ± slider** + **max pain** heading me.
+**⛓️ Options** — **Σ Sum chain** (teeno expiry ka strike-wise total) + har expiry ka
+apna chain (OHLC/Settle/Turnover chain ke andar hi). 🟧 CALLS ITM · 🟥 PUTS ITM ·
+🔵 **ATM** row · ChgOI green = OI add, red = cut. **Strikes ± slider** + **max pain**.
 
-**🏦 FII/DII** — FII / DII / Pro / Client ka F&O positioning (OI + Volume).
+**🏦 Participant** — FII / DII / Pro / Client ka F&O positioning (OI + Volume).
 **Net = Long − Short**: 🟢 net long (bullish), 🔴 net short (bearish). Ye **market-wide** hai.
 
-**🎯 Positioning** — **Real OI buildup** (price + OI change se) har stock ka + market scan/filter.
-
-**📊 Overview** — Saare ~210 stocks ka math ek table me. **Sort by** se compare karo.
-Symbol + header pinned; right scroll = saare 18 columns.
+**📊 Math stats** — Saare ~210 stocks ka computed math ek table me. **Sort by** se compare
+karo. Symbol + header pinned; right scroll = saare 18 columns.
 
 ---
 
@@ -267,7 +263,7 @@ def all_symbols():
 
 
 def stock_history(symbol):
-    df = q("SELECT date,open,high,low,close,prev_close,volume,turnover,"
+    df = q("SELECT date,open,high,low,close,prev_close,settle,volume,turnover,"
            "num_trades,deliv_qty,deliv_pct FROM prices WHERE symbol=? ORDER BY date",
            (symbol,))
     if df.empty:
@@ -289,6 +285,37 @@ def stock_history(symbol):
 def fno_dates(symbol):
     return q("SELECT DISTINCT date FROM options WHERE symbol=? ORDER BY date DESC",
              (symbol,))["date"].tolist()
+
+
+@st.cache_data(ttl=300)
+def participant_net_series():
+    """Per-day total NET (Long − Short, OI) for each participant across all dates.
+    Returns a date-indexed frame with FII/DII/Pro/Client columns."""
+    df = q("""SELECT date, client_type, total_long, total_short
+              FROM participant WHERE metric='oi'
+              AND client_type IN ('FII','DII','Pro','Client') ORDER BY date""")
+    if df.empty:
+        return df
+    df["net"] = df["total_long"] - df["total_short"]
+    return df.pivot_table(index="date", columns="client_type", values="net")
+
+
+@st.cache_data(ttl=300)
+def window_returns():
+    """1-week (5 trading-day) and 1-month (20 trading-day) return % per stock,
+    split/bonus-adjusted. Index = symbol."""
+    px = q("SELECT symbol, date, close FROM prices")
+    if px.empty:
+        return pd.DataFrame(columns=["ret_1w", "ret_1m"])
+    wide = px.pivot(index="date", columns="symbol", values="close").sort_index()
+    wide = analysis.adjust_for_splits(wide)          # split-adjusted closes
+
+    def wret(n):
+        if len(wide) <= n:
+            return pd.Series(index=wide.columns, dtype=float)
+        return (wide.iloc[-1] / wide.iloc[-1 - n] - 1) * 100
+
+    return pd.DataFrame({"ret_1w": wret(5), "ret_1m": wret(20)})
 
 
 @st.cache_data(ttl=300)
@@ -371,11 +398,15 @@ def _cell_chg(v):
     return f'<span class="{cls}">{sign}{_fmt(v)}</span>'
 
 
-def render_chain(df, spot, has_ltp, ltp_col_ce="close_CE", ltp_col_pe="close_PE"):
+def render_chain(df, spot, has_ltp, ltp_col_ce="close_CE", ltp_col_pe="close_PE",
+                 extra=False):
     """Build a Sensibull-style HTML option chain from a per-strike DataFrame.
 
-    Expected columns: strike, oi_CE, chg_oi_CE, volume_CE, oi_PE, chg_oi_PE,
+    Core columns: strike, oi_CE, chg_oi_CE, volume_CE, oi_PE, chg_oi_PE,
     volume_PE (+ optional close_CE/close_PE for LTP).
+    With extra=True, also renders per-side Open/High/Low/Settle/Turnover
+    (needs open_/high_/low_/settle_/value_lakh_ columns) — used for the
+    per-expiry chains so the raw data lives INSIDE the chain, not a table below.
     """
     if df is None or df.empty:
         return "<i>—</i>"
@@ -383,30 +414,52 @@ def render_chain(df, spot, has_ltp, ltp_col_ce="close_CE", ltp_col_pe="close_PE"
     mx = float(pd.concat([df["oi_CE"], df["oi_PE"]]).abs().max() or 0)
     atm = df.iloc[(df["strike"] - spot).abs().argmin()]["strike"] if spot else None
 
-    head_ce = "<th>OI</th><th>Chg OI</th><th>Vol</th>" + ("<th>LTP</th>" if has_ltp else "")
-    head_pe = ("<th>LTP</th>" if has_ltp else "") + "<th>Vol</th><th>Chg OI</th><th>OI</th>"
+    def _px(v):
+        return f"{v:.1f}" if pd.notna(v) else "—"
+
+    ex_head_ce = ("<th>Open</th><th>High</th><th>Low</th><th>Settle</th>"
+                  "<th>Turnover</th>") if extra else ""
+    ex_head_pe = ("<th>Turnover</th><th>Settle</th><th>Low</th><th>High</th>"
+                  "<th>Open</th>") if extra else ""
+    head_ce = ("<th>OI</th><th>Chg OI</th><th>Vol</th>"
+               + ("<th>LTP</th>" if has_ltp else "") + ex_head_ce)
+    head_pe = (ex_head_pe + ("<th>LTP</th>" if has_ltp else "")
+               + "<th>Vol</th><th>Chg OI</th><th>OI</th>")
     rows = []
     for _, r in df.iterrows():
         strike = r["strike"]
         itm_ce = " itmce" if (spot and strike < spot) else ""
         itm_pe = " itmpe" if (spot and strike > spot) else ""
         atm_cls = " atm" if strike == atm else ""
-        ltp_ce = f'<td class="{itm_ce.strip()}">{r.get(ltp_col_ce, float("nan")):.2f}</td>' if has_ltp and pd.notna(r.get(ltp_col_ce)) else ("<td></td>" if has_ltp else "")
-        ltp_pe = f'<td class="{itm_pe.strip()}">{r.get(ltp_col_pe, float("nan")):.2f}</td>' if has_ltp and pd.notna(r.get(ltp_col_pe)) else ("<td></td>" if has_ltp else "")
+        cc, pc = itm_ce.strip(), itm_pe.strip()
+        ltp_ce = f'<td class="{cc}">{r.get(ltp_col_ce, float("nan")):.2f}</td>' if has_ltp and pd.notna(r.get(ltp_col_ce)) else ("<td></td>" if has_ltp else "")
+        ltp_pe = f'<td class="{pc}">{r.get(ltp_col_pe, float("nan")):.2f}</td>' if has_ltp and pd.notna(r.get(ltp_col_pe)) else ("<td></td>" if has_ltp else "")
+        ex_ce = ex_pe = ""
+        if extra:
+            ex_ce = (f'<td class="{cc}">{_px(r.get("open_CE"))}</td>'
+                     f'<td class="{cc}">{_px(r.get("high_CE"))}</td>'
+                     f'<td class="{cc}">{_px(r.get("low_CE"))}</td>'
+                     f'<td class="{cc}">{_px(r.get("settle_CE"))}</td>'
+                     f'<td class="{cc}">{_fmt(r.get("value_lakh_CE"))}</td>')
+            ex_pe = (f'<td class="{pc}">{_fmt(r.get("value_lakh_PE"))}</td>'
+                     f'<td class="{pc}">{_px(r.get("settle_PE"))}</td>'
+                     f'<td class="{pc}">{_px(r.get("low_PE"))}</td>'
+                     f'<td class="{pc}">{_px(r.get("high_PE"))}</td>'
+                     f'<td class="{pc}">{_px(r.get("open_PE"))}</td>')
         strike_lbl = f"{strike:.0f}" + (" · ATM" if strike == atm else "")
         rows.append(
             f'<tr class="{atm_cls.strip()}">'
-            f'<td class="{itm_ce.strip()}">{_cell_oi(r["oi_CE"], mx, "ce")}</td>'
-            f'<td class="{itm_ce.strip()}">{_cell_chg(r["chg_oi_CE"])}</td>'
-            f'<td class="{itm_ce.strip()}">{_fmt(r["volume_CE"])}</td>'
-            f'{ltp_ce}'
+            f'<td class="{cc}">{_cell_oi(r["oi_CE"], mx, "ce")}</td>'
+            f'<td class="{cc}">{_cell_chg(r["chg_oi_CE"])}</td>'
+            f'<td class="{cc}">{_fmt(r["volume_CE"])}</td>'
+            f'{ltp_ce}{ex_ce}'
             f'<td class="stk">{strike_lbl}</td>'
-            f'{ltp_pe}'
-            f'<td class="{itm_pe.strip()}">{_fmt(r["volume_PE"])}</td>'
-            f'<td class="{itm_pe.strip()}">{_cell_chg(r["chg_oi_PE"])}</td>'
-            f'<td class="{itm_pe.strip()}">{_cell_oi(r["oi_PE"], mx, "pe")}</td>'
+            f'{ex_pe}{ltp_pe}'
+            f'<td class="{pc}">{_fmt(r["volume_PE"])}</td>'
+            f'<td class="{pc}">{_cell_chg(r["chg_oi_PE"])}</td>'
+            f'<td class="{pc}">{_cell_oi(r["oi_PE"], mx, "pe")}</td>'
             f'</tr>')
-    span = 4 if has_ltp else 3
+    span = 3 + (1 if has_ltp else 0) + (5 if extra else 0)
     return (CHAIN_CSS +
             '<div style="overflow-x:auto"><table class="oc"><thead>'
             f'<tr><th colspan="{span}" style="text-align:center;color:#f59e0b">CALLS</th>'
@@ -470,23 +523,29 @@ def render_stock_table(view):
                    f'<span class="bar-v">{dp:.1f}</span>') if pd.notna(dp) else "—"
         turn = f'{r["turnover"]/1e7:,.1f}' if pd.notna(r.get("turnover")) else "—"
         trades = _fmt(r["num_trades"]) if pd.notna(r.get("num_trades")) else "—"
+        pcl = f'{r["prev_close"]:.1f}' if pd.notna(r.get("prev_close")) else "—"
+        stl = f'{r["settle"]:.1f}' if pd.notna(r.get("settle")) else "—"
+        dqty = _fmt(r["deliv_qty"]) if pd.notna(r.get("deliv_qty")) else "—"
         rows.append(
             f'<tr><td class="date">{r["date"]}</td>'
             f'<td>{r["open"]:.1f}</td><td>{r["high"]:.1f}</td><td>{r["low"]:.1f}</td>'
             f'<td class="cl {"up" if up else "dn"}">{r["close"]:.1f}</td>'
+            f'<td>{pcl}</td><td>{stl}</td>'
             f'<td>{pill}</td>'
             f'<td class="bar-cell">{volcell}</td>'
             f'<td>{turn}</td><td>{trades}</td>'
+            f'<td>{dqty}</td>'
             f'<td class="bar-cell">{delcell}</td></tr>')
     legend = ('<div class="stlg">Close green/red = up/down din · '
-              'bars = volume &amp; delivery% · turnover ₹Cr · prices split/bonus-adjusted. '
-              'Neeche candle chart me hover karo.</div>')
+              'bars = volume &amp; delivery% · turnover ₹Cr · prices split/bonus-adjusted '
+              '(Prev Close &amp; Settle raw). Neeche candle chart me hover karo.</div>')
     return (STOCK_CSS + legend +
             '<div style="overflow-x:auto"><table class="stbl"><thead><tr>'
             '<th class="l">Date</th>'
             '<th>Open</th><th>High</th><th>Low</th><th>Close</th>'
+            '<th>Prev Cl</th><th>Settle</th>'
             '<th>Chg%</th><th>Volume</th><th>Turnover ₹Cr</th><th>Trades</th>'
-            '<th>Deliv%</th>'
+            '<th>Deliv Qty</th><th>Deliv%</th>'
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
@@ -529,6 +588,8 @@ def render_overview_table(df):
             f'<td>{num(r["skew"])}</td>'
             f'<td>{num(r["kurtosis"])}</td>'
             f'<td>{col(r["daily_return"]*100 if pd.notna(r["daily_return"]) else None)}%</td>'
+            f'<td>{col(r.get("ret_1w"), "{:+.1f}")}%</td>'
+            f'<td>{col(r.get("ret_1m"), "{:+.1f}")}%</td>'
             f'<td>{col(r["mean_return"]*100 if pd.notna(r["mean_return"]) else None, "{:+.3f}")}%</td>'
             f'<td>{pcr}</td>'
             f'<td>{_fmt(r["total_oi"])}</td>'
@@ -540,7 +601,7 @@ def render_overview_table(df):
             '<th class="l">Symbol</th><th>Return%</th><th>CAGR%</th><th>Ann Vol</th>'
             '<th>Daily Vol</th><th>Sharpe</th><th>Max DD</th><th>Beta</th>'
             '<th>Z-score</th><th>52w %ile</th><th>Skew</th><th>Kurt</th>'
-            '<th>Day Ret%</th><th>Mean Ret%</th><th>PCR</th><th>Total OI</th>'
+            '<th>Day Ret%</th><th>1W%</th><th>1M%</th><th>Mean Ret%</th><th>PCR</th><th>Total OI</th>'
             '<th>OI Chg</th><th>Fut Prem</th>'
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
@@ -553,7 +614,7 @@ OVERVIEW_CSS = """
 .ovwrap::-webkit-scrollbar{height:10px;width:10px;}
 .ovwrap::-webkit-scrollbar-thumb{background:#6366f1;border-radius:6px;}
 .ovwrap::-webkit-scrollbar-track{background:rgba(255,255,255,.04);}
-.ovtbl{min-width:1080px;font-size:11.5px;}
+.ovtbl{min-width:1200px;font-size:11.5px;}
 .ovtbl th{position:sticky;top:0;z-index:2;background:#0c1020;padding:6px 7px;}
 .ovtbl th.l{left:0;z-index:3;}
 .ovtbl td{padding:4px 7px;}
@@ -611,43 +672,140 @@ def render_futures_table(fut, spot):
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
-def render_participant(df):
-    """Themed net-position table for participant OI/Vol (FII/DII/Pro/Client)."""
-    if df is None or df.empty:
-        return "<i>—</i>"
-    order = {"FII": 0, "DII": 1, "Pro": 2, "Client": 3, "TOTAL": 4}
-    df = df.copy()
-    df["_o"] = df["client_type"].map(order).fillna(9)
-    df = df.sort_values("_o")
+def _participant_nets(df):
+    """Return {client_type: dict of net positions} from a participant df.
+    net = Long − Short for each segment."""
+    out = {}
+    for _, r in df.iterrows():
+        out[r["client_type"]] = {
+            "idxfut": r["fut_idx_long"] - r["fut_idx_short"],
+            "stkfut": r["fut_stk_long"] - r["fut_stk_short"],
+            "idxopt": ((r["opt_idx_call_long"] + r["opt_idx_put_long"])
+                       - (r["opt_idx_call_short"] + r["opt_idx_put_short"])),
+            "stkopt": ((r["opt_stk_call_long"] + r["opt_stk_put_long"])
+                       - (r["opt_stk_call_short"] + r["opt_stk_put_short"])),
+            "tnet": r["total_long"] - r["total_short"],
+        }
+    return out
 
-    def net(v):
-        cls = "up" if (v or 0) >= 0 else "dn"
-        sign = "+" if (v or 0) >= 0 else ""
-        return f'<span class="{cls}">{sign}{_fmt(v)}</span>'
+
+_SEG_ORDER = ["Stock Futures", "Index Futures", "Index Options", "Stock Options"]
+
+
+def _seg_metrics(r):
+    """{segment: (net, gross)} for one participant row. Futures net = Long − Short;
+    options net = bullish(call_long + put_short) − bearish(put_long + call_short)."""
+    def n(k):
+        v = r[k]
+        return v if pd.notna(v) else 0
+    io_b, io_be = n("opt_idx_call_long") + n("opt_idx_put_short"), n("opt_idx_put_long") + n("opt_idx_call_short")
+    so_b, so_be = n("opt_stk_call_long") + n("opt_stk_put_short"), n("opt_stk_put_long") + n("opt_stk_call_short")
+    return {
+        "Stock Futures": (n("fut_stk_long") - n("fut_stk_short"),
+                          n("fut_stk_long") + n("fut_stk_short")),
+        "Index Futures": (n("fut_idx_long") - n("fut_idx_short"),
+                          n("fut_idx_long") + n("fut_idx_short")),
+        "Index Options": (io_b - io_be, io_b + io_be),
+        "Stock Options": (so_b - so_be, so_b + so_be),
+    }
+
+
+def _senti(score):
+    """(label, dirn, opacity) from a −1..+1 sentiment score (net / gross)."""
+    a = abs(score)
+    if a < 0.05:
+        return ("Indecisive", "neu", 0.0)
+    word = "Bullish" if score > 0 else "Bearish"
+    dirn = "bull" if score > 0 else "bear"
+    lvl, op = (("Strong", 0.95) if a >= 0.33 else
+               ("Medium", 0.72) if a >= 0.15 else ("Mild", 0.5))
+    return (f"{lvl} {word}", dirn, op)
+
+
+PARTI_SENTI_CSS = """
+<style>
+.psent{width:100%;border-collapse:collapse;font-size:12px;min-width:720px;}
+.psent th{font-size:11px;color:#9ca3af;font-weight:600;padding:7px 10px;text-align:right;
+  border-bottom:1px solid rgba(148,163,184,.2);}
+.psent th.l{text-align:left;}
+.psent td{padding:6px 10px;text-align:right;border-top:1px solid rgba(148,163,184,.12);
+  vertical-align:middle;}
+.psent td.part{font-weight:700;color:#e5e7eb;white-space:nowrap;}
+.psent td.seg{text-align:left;color:#cbd5e1;white-space:nowrap;}
+.psent tr.grp td{border-top:2px solid rgba(148,163,184,.3);}
+.psent .up{color:#10b981;} .psent .dn{color:#f43f5e;}
+.strack{position:relative;height:24px;min-width:240px;}
+.strack::before{content:"";position:absolute;left:50%;top:1px;bottom:1px;
+  border-left:1px dashed rgba(148,163,184,.35);}
+.spill{position:absolute;top:3px;height:18px;line-height:18px;padding:0 9px;border-radius:4px;
+  font-size:10.5px;font-weight:700;color:#fff;white-space:nowrap;
+  text-shadow:0 1px 2px rgba(0,0,0,.4);}
+.spill.bull{left:50%;} .spill.bear{right:50%;}
+.sneu{position:absolute;left:0;right:0;top:0;line-height:24px;text-align:center;
+  color:#9ca3af;font-size:11px;}
+.psent .mtag{font-size:9.5px;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:6px;}
+.psent .mtag.oi{background:rgba(99,102,241,.18);color:#a5b4fc;}
+.psent .mtag.vol{background:rgba(245,158,11,.18);color:#fcd34d;}
+.psent tr.vrow td{background:rgba(255,255,255,.014);}
+.psent tr.vrow td.seg{color:#9ca3af;}
+</style>
+"""
+
+
+def _senti_row(ct_show, seg_label, cm, pm, ct, seg, tr_cls):
+    """One sentiment row: bar + net + day-over-day change for a participant/segment."""
+    net, gross = cm[ct][seg]
+    score = net / gross if gross else 0.0
+    label, dirn, op = _senti(score)
+    if dirn == "neu":
+        bar = f'<div class="strack"><span class="sneu">{label}</span></div>'
+    else:
+        rgb = "16,185,129" if dirn == "bull" else "244,63,94"
+        side = "left" if dirn == "bull" else "right"
+        bar = (f'<div class="strack"><span class="spill {dirn}" '
+               f'style="{side}:50%;background:rgba({rgb},{op:.2f})">{label}</span></div>')
+    chg = "—"
+    if ct in pm:
+        dnet = net - pm[ct][seg][0]
+        c = "up" if dnet >= 0 else "dn"
+        chg = f'<span class="{c}">{"+" if dnet>=0 else ""}{_fmt(dnet)}</span>'
+    return (f'<tr class="{tr_cls}"><td class="part">{ct_show}</td>'
+            f'<td class="seg">{seg_label}</td>'
+            f'<td>{bar}</td><td>{_fmt(net)}</td><td>{chg}</td></tr>')
+
+
+def render_participant_sentiment(oi, prev_oi, vol, prev_vol):
+    """Sensibull-style sentiment table. Per participant × segment, TWO stacked
+    lines: (OI) standing position + (Vol) that day's traded direction — each with
+    a Bearish‹—›Bullish bar, Net, and day-over-day Change."""
+    if oi is None or oi.empty:
+        return "<i>—</i>"
+    keep = ("FII", "DII", "Pro", "Client")
+
+    def mm(df):
+        return ({r["client_type"]: _seg_metrics(r) for _, r in df.iterrows()
+                 if r["client_type"] in keep}
+                if df is not None and not df.empty else {})
+    oim, poim, volm, pvolm = mm(oi), mm(prev_oi), mm(vol), mm(prev_vol)
 
     rows = []
-    for _, r in df.iterrows():
-        idxfut = r["fut_idx_long"] - r["fut_idx_short"]
-        stkfut = r["fut_stk_long"] - r["fut_stk_short"]
-        optidx = ((r["opt_idx_call_long"] + r["opt_idx_put_long"])
-                  - (r["opt_idx_call_short"] + r["opt_idx_put_short"]))
-        optstk = ((r["opt_stk_call_long"] + r["opt_stk_put_long"])
-                  - (r["opt_stk_call_short"] + r["opt_stk_put_short"]))
-        tnet = r["total_long"] - r["total_short"]
-        tot = " tot" if r["client_type"] == "TOTAL" else ""
-        rows.append(
-            f'<tr class="{tot.strip()}"><td class="date">{r["client_type"]}</td>'
-            f'<td>{net(idxfut)}</td><td>{net(stkfut)}</td>'
-            f'<td>{net(optidx)}</td><td>{net(optstk)}</td>'
-            f'<td>{_fmt(r["total_long"])}</td><td>{_fmt(r["total_short"])}</td>'
-            f'<td>{net(tnet)}</td></tr>')
-    return (STOCK_CSS +
-            '<style>.stbl tr.tot td{border-top:2px solid #6366f1;font-weight:600;'
-            'background:rgba(99,102,241,.10);}</style>'
-            '<div style="overflow-x:auto"><table class="stbl"><thead><tr>'
-            '<th class="l">Participant</th><th>Idx Fut net</th><th>Stk Fut net</th>'
-            '<th>Idx Opt net</th><th>Stk Opt net</th>'
-            '<th>Total Long</th><th>Total Short</th><th>Net</th>'
+    for ct in keep:
+        if ct not in oim:
+            continue
+        first = True
+        for seg in _SEG_ORDER:
+            rows.append(_senti_row(
+                ct if first else "", f'{seg} <span class="mtag oi">OI</span>',
+                oim, poim, ct, seg, "grp" if first else ""))
+            first = False
+            if ct in volm:
+                rows.append(_senti_row(
+                    "", f'{seg} <span class="mtag vol">Vol</span>',
+                    volm, pvolm, ct, seg, "vrow"))
+    return (PARTI_SENTI_CSS +
+            '<div style="overflow-x:auto"><table class="psent"><thead><tr>'
+            '<th class="l">Participant</th><th class="l">Segment</th>'
+            '<th>Bearish&nbsp;‹—›&nbsp;Bullish</th><th>Net</th><th>Change</th>'
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
@@ -679,46 +837,11 @@ def render_est_split(part, stock_oi):
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
-BUILDUP_COLOR = {"Long Buildup": "#10b981", "Short Covering": "#34d399",
-                 "Short Buildup": "#f43f5e", "Long Unwinding": "#fb923c"}
-
-
-def classify_buildup(price_chg, oi_chg):
-    if oi_chg > 0:
-        return "Long Buildup" if price_chg >= 0 else "Short Buildup"
-    return "Short Covering" if price_chg >= 0 else "Long Unwinding"
-
-
-def render_buildup_scan(df):
-    """Themed table: per-stock OI buildup (price + OI change). Real, reliable."""
-    if df is None or df.empty:
-        return "<i>—</i>"
-    df = df.sort_values("chg_oi", ascending=False)
-    rows = []
-    for _, r in df.iterrows():
-        col = BUILDUP_COLOR.get(r["buildup"], "#888")
-        pchg = r["price_chg_pct"]
-        pcls = "up" if pchg >= 0 else "dn"
-        rows.append(
-            f'<tr><td class="date" style="font-weight:600">{r["symbol"]}</td>'
-            f'<td class="{pcls}">{pchg:+.2f}%</td>'
-            f'<td>{_fmt(r["oi"])}</td>'
-            f'<td class="{"up" if r["chg_oi"]>=0 else "dn"}">'
-            f'{"+" if r["chg_oi"]>=0 else ""}{_fmt(r["chg_oi"])}</td>'
-            f'<td><span style="color:{col};font-weight:600">{r["buildup"]}</span></td>'
-            f'</tr>')
-    return (STOCK_CSS +
-            '<div style="overflow-x:auto"><table class="stbl" style="min-width:460px">'
-            '<thead><tr><th class="l">Stock</th><th>Price chg</th>'
-            '<th>Futures OI</th><th>OI chg</th><th>Buildup</th>'
-            '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
-
-
 # --------------------------------------------------------------------------- #
 # Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
-SECTIONS = ["🔎 Full view", "📈 Stock (date-wise)", "🔮 Futures", "⛓️ Option chain",
-            "🏦 FII/DII", "🎯 Positioning", "📊 Overview"]
+SECTIONS = ["📈 Equity / Cash", "🔮 Futures", "⛓️ Options",
+            "🏦 Participant", "📊 Math stats"]
 
 with st.sidebar:
     st.markdown(
@@ -750,132 +873,9 @@ with st.sidebar:
 st.markdown(ticker_html(), unsafe_allow_html=True)
 
 # =========================================================================== #
-# TAB — Full view (selected stock ka SAB data ek page par)
-# =========================================================================== #
-if section == "🔎 Full view":
-    st.subheader(f"🔎 {symbol} — poora data (ek jagah)")
-    st.caption("Sidebar se stock badlo — is page ke sab sections update ho jayenge.")
-    _hist = stock_history(symbol)
-    if _hist.empty:
-        st.warning(f"{symbol}: koi data nahi.")
-    else:
-        _lt = _hist.iloc[-1]                         # latest day (for metrics)
-        _fdates = q("SELECT DISTINCT date FROM futures WHERE symbol=? "
-                    "ORDER BY date DESC", (symbol,))["date"].tolist()
-        _srow = q("SELECT * FROM stats WHERE symbol=?", (symbol,))
-
-        # --- Top metrics (latest) ---
-        m1, m2, m3, m4, m5 = st.columns(5)
-        m1.metric("Close", f"{_lt['close']:.2f}", f"{_lt['chg_pct']:+.2f}%")
-        m2.metric("Volume", f"{_lt['volume']:,.0f}")
-        m3.metric("Delivery %", f"{_lt['deliv_pct']:.1f}"
-                  if pd.notna(_lt['deliv_pct']) else "—")
-        if not _srow.empty:
-            r0 = _srow.iloc[0]
-            m4.metric("Ann Vol", f"{r0['ann_volatility']*100:.1f}%")
-            m5.metric("Beta", f"{r0['beta']:.2f}")
-
-        # --- F&O date slider (futures / option chain / buildup / split ke liye) ---
-        _fd = _spot = None
-        if _fdates:
-            _fd = date_slider("📅 F&O date (futures / option chain / buildup)",
-                              _fdates, "fullview_fdate")
-            _sp = q("SELECT close FROM prices WHERE symbol=? AND date=?", (symbol, _fd))
-            _spot = float(_sp.iloc[0]["close"]) if not _sp.empty else None
-
-        # --- 🎯 OI buildup (real) — metrics ke turant neeche ---
-        if _fd:
-            _p2 = q("SELECT close, prev_close FROM prices WHERE symbol=? AND date=?",
-                    (symbol, _fd))
-            _tchg = q("SELECT SUM(chg_oi) c, SUM(oi) o FROM futures "
-                      "WHERE symbol=? AND date=?", (symbol, _fd))
-            if not _p2.empty and not _tchg.empty and pd.notna(_p2.iloc[0]["prev_close"]):
-                _pc = (_p2.iloc[0]["close"] / _p2.iloc[0]["prev_close"] - 1) * 100
-                _oc = _tchg.iloc[0]["c"] or 0
-                _bu = classify_buildup(_pc, _oc)
-                _col = BUILDUP_COLOR.get(_bu, "#888")
-                st.markdown("#### 🎯 OI buildup (real)")
-                st.markdown(f"price **{_pc:+.2f}%** · OI chg **{_oc:+,.0f}** · "
-                            f"OI **{_fmt(_tchg.iloc[0]['o'])}** → "
-                            f"<span style='color:{_col};font-weight:600;font-size:18px'>"
-                            f"{_bu}</span>", unsafe_allow_html=True)
-
-        # --- 📊 Math stats — metrics ke neeche ---
-        st.markdown("#### 📊 Math stats (poore period ke)")
-        if _srow.empty:
-            st.write("—")
-        else:
-            r = _srow.iloc[0]
-
-            def _sc_txt(v, f="{:+.2f}"):
-                if pd.isna(v):
-                    return "—"
-                c = "#10b981" if v >= 0 else "#f43f5e"
-                return f"<span style='color:{c}'>{f.format(v)}</span>"
-            st.markdown(
-                "<div style='font-size:13px;line-height:2'>"
-                f"Cumulative return: {_sc_txt(r['cum_return']*100, '{:+.1f}')}% · "
-                f"CAGR: {_sc_txt(r['cagr']*100, '{:+.1f}')}% · "
-                f"Ann volatility: {r['ann_volatility']*100:.1f}% · "
-                f"Sharpe: {_sc_txt(r['sharpe'])} · "
-                f"Max drawdown: <span style='color:#f43f5e'>{r['max_drawdown']*100:.1f}%</span> · "
-                f"Beta: {r['beta']:.2f} · "
-                f"Z-score: {_sc_txt(r['zscore'])} · "
-                f"52w %ile: {r['pct_rank_52w']:.0f} · "
-                f"Skew: {r['skew']:.2f} · Kurtosis: {r['kurtosis']:.2f} · "
-                f"PCR: {r['put_call_ratio']:.2f} · "
-                f"Futures premium: {_sc_txt(r['futures_premium'], '{:+.1f}')}"
-                "</div>", unsafe_allow_html=True)
-
-        st.divider()
-
-        if not _fd:
-            st.info("Is stock ka F&O data nahi (option chain / futures skip).")
-        else:
-            # --- 🔮 Futures ---
-            st.markdown(f"#### 🔮 Futures (teeno expiry) — {_fd}")
-            _fut = q("""SELECT expiry, open, high, low, close, settle,
-                              contracts, value_lakh, oi, chg_oi
-                       FROM futures WHERE symbol=? AND date=? ORDER BY expiry""",
-                     (symbol, _fd))
-            st.markdown(render_futures_table(_fut, _spot), unsafe_allow_html=True)
-
-            # --- ⛓️ Option chain (sum, ATM ± 8 strikes) ---
-            st.markdown("#### ⛓️ Option chain (sum — ATM ke aas-paas)")
-            _sc = analysis.sum_chain(symbol, _fd)
-            if not _sc.empty:
-                for _c in ["oi_CE", "chg_oi_CE", "volume_CE",
-                           "oi_PE", "chg_oi_PE", "volume_PE"]:
-                    if _c not in _sc.columns:
-                        _sc[_c] = 0
-                _tot = _sc[["oi_CE", "oi_PE"]].sum()
-                _pcr = _tot["oi_PE"] / _tot["oi_CE"] if _tot["oi_CE"] else float("nan")
-                if _spot is not None:
-                    _s2 = _sc.sort_values("strike").reset_index(drop=True)
-                    _ai = int((_s2["strike"] - _spot).abs().argmin())
-                    _sc = _s2.iloc[max(0, _ai - 8):_ai + 9]
-                st.caption(f"spot {_spot:,.1f} · PCR {_pcr:.2f} · "
-                           f"CE OI {_fmt(_tot['oi_CE'])} · PE OI {_fmt(_tot['oi_PE'])}")
-                st.markdown(render_chain(_sc, _spot, has_ltp=False),
-                            unsafe_allow_html=True)
-
-            # --- 🏦 Estimated participant split ---
-            st.markdown("#### 🏦 Estimated participant split "
-                        "*(⚠️ proportional estimate)*")
-            _pmax = q("SELECT MAX(date) d FROM participant")["d"].iloc[0]
-            _part = q("SELECT client_type, fut_stk_long FROM participant WHERE date=? "
-                      "AND metric='oi' AND client_type IN ('FII','DII','Pro','Client')",
-                      (_pmax,))
-            _soi = q("SELECT SUM(oi) oi FROM futures WHERE symbol=? AND date=?",
-                     (symbol, _fd))
-            _stoi = float(_soi["oi"].iloc[0]) if not _soi.empty and pd.notna(_soi["oi"].iloc[0]) else 0
-            if not _part.empty and _stoi:
-                st.markdown(render_est_split(_part, _stoi), unsafe_allow_html=True)
-
-# =========================================================================== #
 # TAB 1 — date-wise stock view
 # =========================================================================== #
-elif section == "📈 Stock (date-wise)":
+if section == "📈 Equity / Cash":
     hist = stock_history(symbol)
     if hist.empty:
         st.warning(f"{symbol}: koi data nahi. Pehle fetch_data / fetch_fno chalao.")
@@ -966,7 +966,7 @@ elif section == "🔮 Futures":
 # =========================================================================== #
 # TAB — Option chain (Sensibull style)
 # =========================================================================== #
-elif section == "⛓️ Option chain":
+elif section == "⛓️ Options":
     st.subheader(f"{symbol} — option chain")
     cdates = fno_dates(symbol)
     if not cdates:
@@ -1018,36 +1018,36 @@ elif section == "⛓️ Option chain":
             label = (f"Expiry {i+1} — {exp}" + (" (near)" if i == 0 else "")
                      + (f"   ·   max pain {mp:.0f}" if mp else ""))
             with st.expander(label, expanded=(i == 0)):
-                ch = q("""SELECT strike, opt_type, oi, chg_oi, volume, close
+                # Pull the full per-strike data — the extra columns (OHLC, settle,
+                # turnover) now render INSIDE the chain itself (extra=True), so no
+                # separate raw table below. 'contracts' skipped (== volume).
+                ch = q("""SELECT strike, opt_type, oi, chg_oi, volume, close,
+                                 open, high, low, settle, value_lakh
                           FROM options WHERE symbol=? AND date=? AND expiry=?""",
                        (symbol, odate, exp))
                 if ch.empty:
                     st.write("—")
                     continue
                 piv = ch.pivot_table(index="strike", columns="opt_type",
-                                     values=["oi", "chg_oi", "volume", "close"])
+                                     values=["oi", "chg_oi", "volume", "close",
+                                             "open", "high", "low", "settle",
+                                             "value_lakh"])
                 piv.columns = [f"{a}_{b}" for a, b in piv.columns]
                 piv = piv.reset_index()
                 for c in ["oi_CE", "chg_oi_CE", "volume_CE",
                           "oi_PE", "chg_oi_PE", "volume_PE"]:
                     if c not in piv.columns:
                         piv[c] = 0
-                st.markdown(render_chain(window_strikes(piv), spot_px, has_ltp=True),
-                            unsafe_allow_html=True)
-
-        # Full raw option data (all columns: OHLC, settle, contracts, value…)
-        with st.expander("📋 Full option data (raw — saare columns)"):
-            raw = q("""SELECT expiry, strike, opt_type, open, high, low, close,
-                              settle, oi, chg_oi, volume, contracts, value_lakh
-                       FROM options WHERE symbol=? AND date=?
-                       ORDER BY expiry, strike, opt_type""", (symbol, odate))
-            st.dataframe(raw, width="stretch", hide_index=True)
-            st.caption(f"{len(raw)} rows · value_lakh column = turnover in raw ₹")
+                st.markdown(
+                    render_chain(window_strikes(piv), spot_px, has_ltp=True, extra=True),
+                    unsafe_allow_html=True)
+                st.caption("CALLS aur PUTS dono taraf: OI · Chg OI · Vol · LTP · "
+                           "Open · High · Low · Settle · Turnover (₹) — ek hi chain me.")
 
 # =========================================================================== #
 # TAB — FII / DII / Pro / Client participant OI & Volume
 # =========================================================================== #
-elif section == "🏦 FII/DII":
+elif section == "🏦 Participant":
     st.subheader("FII / DII / Pro / Client — F&O positions")
     pdates = q("SELECT DISTINCT date FROM participant ORDER BY date DESC")["date"].tolist()
     if not pdates:
@@ -1055,19 +1055,73 @@ elif section == "🏦 FII/DII":
                 "(ya run_daily.py).")
     else:
         pdate = date_slider("Date", pdates, "fii_date")
-        st.caption("Net = Long − Short (contracts). "
-                   "Green = net long (bullish), red = net short (bearish). "
-                   "FII/DII ka rukh market sentiment dikhata hai.")
-
-        st.markdown("#### Open Interest (positions held)")
+        prevd = q("SELECT MAX(date) d FROM participant WHERE date<? AND metric='oi'",
+                  (pdate,))["d"].iloc[0]
         oi = q("SELECT * FROM participant WHERE date=? AND metric='oi'", (pdate,))
-        st.markdown(render_participant(oi), unsafe_allow_html=True)
+        prev_oi = (q("SELECT * FROM participant WHERE date=? AND metric='oi'", (prevd,))
+                   if prevd else None)
 
-        st.markdown("#### Trading Volume (contracts traded)")
+        st.caption("**Bearish ‹—› Bullish** = net long/short lean (OI). **Net OI** = net "
+                   "position (futures L−S; options bullish−bearish). **Change** = pichhle "
+                   "din se net ka change (aaj kya kiya).")
+        # FII quick read
+        cn = _participant_nets(oi)
+        pn = _participant_nets(prev_oi) if prev_oi is not None else {}
+        if "FII" in cn and "FII" in pn:
+            dnet = cn["FII"]["tnet"] - pn["FII"]["tnet"]
+            lean = "bullish 🟢" if dnet >= 0 else "bearish 🔴"
+            _c = "#10b981" if dnet >= 0 else "#f43f5e"
+            st.markdown(
+                f"**FII ne aaj:** overall net **{dnet:+,.0f}** vs pichhla din → "
+                f"<span style='color:{_c};font-weight:600'>{lean}</span>",
+                unsafe_allow_html=True)
+
         vol = q("SELECT * FROM participant WHERE date=? AND metric='vol'", (pdate,))
-        st.markdown(render_participant(vol), unsafe_allow_html=True)
+        prev_vol = (q("SELECT * FROM participant WHERE date=? AND metric='vol'", (prevd,))
+                    if prevd else None)
+        st.markdown("#### 🎯 Positioning sentiment (participant × segment · OI + Volume)")
+        st.caption("Har segment ki 2 lines — **OI** (standing position) + **Vol** (us din "
+                   "ka traded direction). Bar = long/short lean · Net · Change (vs pichhla din).")
+        st.markdown(render_participant_sentiment(oi, prev_oi, vol, prev_vol),
+                    unsafe_allow_html=True)
 
-        with st.expander("📋 Full raw data (saare 14 columns)"):
+        # --- Add-on: multi-day trend + cumulative flow (FII/DII net over time) ---
+        series = participant_net_series()
+        if not series.empty:
+            win = series if lookback == "All" else series.tail(int(lookback))
+            st.markdown(f"#### 📈 FII / DII trend — net F&O position (last {len(win)} din)")
+            st.caption("Net = Long − Short (OI). Line 0 ke upar = net long (bullish), "
+                       "niche = net short (bearish). Kitne din = sidebar slider se.")
+            tfig = go.Figure()
+            for ct, color in [("FII", "#6366f1"), ("DII", "#f59e0b")]:
+                if ct in win.columns:
+                    tfig.add_trace(go.Scatter(x=win.index, y=win[ct], name=ct,
+                                   mode="lines", line=dict(color=color, width=2)))
+            tfig.add_hline(y=0, line_dash="dot", line_color="#6b7280")
+            tfig.update_layout(height=260, margin=dict(l=0, r=0, t=8, b=0),
+                               legend=dict(orientation="h", y=1.15),
+                               yaxis_title="Net (contracts)")
+            tfig.update_xaxes(type="category", nticks=8)
+            st.plotly_chart(tfig, width="stretch")
+
+            st.markdown("#### 🌊 Cumulative flow — window start se net change")
+            st.caption("Har participant ne window ke pehle din se ab tak net kitna "
+                       "banaya/kata. Upar ja raha = longs accumulate kar raha.")
+            flow = win - win.iloc[0]
+            ffig = go.Figure()
+            for ct, color in [("FII", "#6366f1"), ("DII", "#f59e0b"),
+                              ("Pro", "#a855f7"), ("Client", "#10b981")]:
+                if ct in flow.columns:
+                    ffig.add_trace(go.Scatter(x=flow.index, y=flow[ct], name=ct,
+                                   mode="lines", line=dict(color=color, width=2)))
+            ffig.add_hline(y=0, line_dash="dot", line_color="#6b7280")
+            ffig.update_layout(height=260, margin=dict(l=0, r=0, t=8, b=0),
+                               legend=dict(orientation="h", y=1.15),
+                               yaxis_title="Cumulative Δ net")
+            ffig.update_xaxes(type="category", nticks=8)
+            st.plotly_chart(ffig, width="stretch")
+
+        with st.expander("📋 Full raw data (OI + Volume — saare 14 columns)"):
             raw = q("SELECT metric,client_type,fut_idx_long,fut_idx_short,"
                     "fut_stk_long,fut_stk_short,opt_idx_call_long,opt_idx_put_long,"
                     "opt_idx_call_short,opt_idx_put_short,opt_stk_call_long,"
@@ -1077,54 +1131,9 @@ elif section == "🏦 FII/DII":
             st.dataframe(raw, width="stretch", hide_index=True)
 
 # =========================================================================== #
-# TAB — Positioning (estimated split + real OI buildup)
-# =========================================================================== #
-elif section == "🎯 Positioning":
-    st.subheader("Stock positioning")
-    pos_dates = q("SELECT DISTINCT date FROM futures ORDER BY date DESC")["date"].tolist()
-    if not pos_dates:
-        st.info("F&O data abhi nahi.")
-    else:
-        ldate = date_slider("Date", pos_dates, "pos_date")
-
-        # --- Real OI buildup ---
-        st.markdown("#### Real OI buildup — price + OI change (reliable)")
-        st.caption("Price ↑ + OI ↑ = Long Buildup · Price ↓ + OI ↑ = Short Buildup · "
-                   "Price ↑ + OI ↓ = Short Covering · Price ↓ + OI ↓ = Long Unwinding")
-        pr = q("SELECT symbol, close, prev_close FROM prices WHERE date=?", (ldate,))
-        fu = q("SELECT symbol, SUM(oi) oi, SUM(chg_oi) chg_oi FROM futures "
-               "WHERE date=? GROUP BY symbol", (ldate,))
-        scan = pr.merge(fu, on="symbol")
-        scan = scan[scan["prev_close"] > 0].copy()
-        scan["price_chg_pct"] = (scan["close"] / scan["prev_close"] - 1) * 100
-        scan["buildup"] = [classify_buildup(p, o)
-                           for p, o in zip(scan["price_chg_pct"], scan["chg_oi"])]
-
-        sel = scan[scan["symbol"] == symbol]
-        if not sel.empty:
-            b = sel.iloc[0]
-            col = BUILDUP_COLOR.get(b["buildup"], "#888")
-            st.markdown(f"**{symbol}:** price {b['price_chg_pct']:+.2f}% · "
-                        f"OI chg {b['chg_oi']:+,.0f} → "
-                        f"<span style='color:{col};font-weight:600;font-size:18px'>"
-                        f"{b['buildup']}</span>", unsafe_allow_html=True)
-
-        counts = scan["buildup"].value_counts()
-        cc = st.columns(4)
-        for i, b in enumerate(["Long Buildup", "Short Buildup",
-                               "Short Covering", "Long Unwinding"]):
-            cc[i].metric(b, int(counts.get(b, 0)))
-
-        st.markdown("**Market scan — kaunse stocks me kya positioning:**")
-        pick = st.selectbox("Buildup filter", ["All", "Long Buildup", "Short Buildup",
-                                               "Short Covering", "Long Unwinding"])
-        show = scan if pick == "All" else scan[scan["buildup"] == pick]
-        st.markdown(render_buildup_scan(show), unsafe_allow_html=True)
-
-# =========================================================================== #
 # TAB — overview (all-stock math stats)
 # =========================================================================== #
-elif section == "📊 Overview":
+elif section == "📊 Math stats":
     st.subheader("All F&O stocks — math stats")
     stats = q("""SELECT symbol, cum_return, cagr, ann_volatility, volatility,
                         sharpe, max_drawdown, beta, zscore, pct_rank_52w,
@@ -1134,9 +1143,15 @@ elif section == "📊 Overview":
     if stats.empty:
         st.info("Stats abhi nahi. `python analysis.py` chalao.")
     else:
+        # Add-on: multi-window returns (trend) — 1D already = Day Ret%; add 1W + 1M.
+        stats = stats.merge(window_returns(), left_on="symbol",
+                            right_index=True, how="left")
         sort_opts = {
+            "1-day return (zyada → kam)": ("daily_return", False),
+            "1-week return (zyada → kam)": ("ret_1w", False),
+            "1-month return (zyada → kam)": ("ret_1m", False),
             "Volatility (zyada → kam)": ("ann_volatility", False),
-            "Return (zyada → kam)": ("cum_return", False),
+            "Return — poora period (zyada → kam)": ("cum_return", False),
             "Sharpe (best → worst)": ("sharpe", False),
             "Max drawdown (bada → chhota)": ("max_drawdown", True),
             "Beta (zyada → kam)": ("beta", False),
@@ -1148,6 +1163,7 @@ elif section == "📊 Overview":
         col, asc = sort_opts[choice]
         stats = stats.sort_values(col, ascending=asc, na_position="last")
         st.markdown(render_overview_table(stats), unsafe_allow_html=True)
-        st.caption("Green = up / positive, red = down / negative · bars = "
-                   "volatility & 52-week position. Stats split/bonus-adjusted.")
+        st.caption("Green = up / positive, red = down / negative · **Day Ret% · 1W% · 1M%** "
+                   "= trend across timeframes (momentum) · bars = volatility & 52-week "
+                   "position. Split/bonus-adjusted. Right scroll = saare columns.")
 

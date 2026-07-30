@@ -37,21 +37,14 @@ Upar **ticker bar** — us din ke **Top 5 gainers** (green line) aur **Top 5 los
 
 ---
 
-## 🗂️ 3. Sections (7) — kya, kis liye, aur matlab
+## 🗂️ 3. Sections (5 — har ek ek data-type) — kya, kis liye, aur matlab
 
-### 🔎 Full view
-Selected stock ka **saara data ek page par** — tab-hopping ki zaroorat nahi.
-- **Top metrics**: Close (+chg%), Volume, Delivery %, Ann Vol, Beta
-- **F&O date slider** — kis din ka F&O dekhna hai
-- **🎯 OI buildup** (us din ka)
-- **📊 Math stats** (poore period ke — neeche glossary me sab explain)
-- **🔮 Futures** (teeno expiry) + **⛓️ Option chain** (sum) + **🏦 Estimated participant split**
+Navigation **data-type** ke hisaab se hai — sidebar me 5 sections, har ek DB ki ek table:
 
-**Use:** Ek stock ki poori kahani ek nazar me — "pehle kaisa tha, ab kaise badal raha hai".
-
-### 📈 Stock (date-wise)
-Har din ek **row**: OHLC, **Chg%** (green/red pill), **Volume** & **Delivery %** (bars),
-Turnover ₹Cr, Trades. Neeche **candle chart** — kisi candle par hover = poori detail.
+### 📈 Equity / Cash
+Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%**
+(green/red pill), **Volume** & **Delivery %** (bars), Turnover ₹Cr, Trades. Neeche
+**candle chart** — kisi candle par hover = poori detail.
 - 🟢 up din · 🔴 down din
 - **Matlab:** Delivery % high = **real buying** (log actually shares le ja rahe, sirf
   intraday speculation nahi). Volume high + delivery low = zyada tar intraday churn.
@@ -63,9 +56,10 @@ Turnover ₹Cr, Trades. Neeche **candle chart** — kisi candle par hover = poor
 - **Matlab:** Premium +ve (future > spot) = market thoda **bullish** lean;
   OI badh raha + price badh raha = naye long positions.
 
-### ⛓️ Option chain (Sensibull style)
+### ⛓️ Options (Sensibull style)
 - **Σ SUM CHAIN** — teeno expiry ka total, strike-wise (CALLS left, PUTS right)
-- Har expiry ka apna chain (expandable) + **max pain**
+- Har expiry ka apna chain (expandable) — **OHLC · Settle · Turnover chain ke andar hi** +
+  **max pain**
 - **Slider**: F&O date + strikes-around-ATM
 - ITM shading, ATM row highlighted, OI bars, green = OI addition / red = OI reduction
 - **Matlab:**
@@ -73,20 +67,14 @@ Turnover ₹Cr, Trades. Neeche **candle chart** — kisi candle par hover = poor
   - **PUT side me zyada OI** = **support**.
   - **PCR** aur **max pain** neeche glossary me.
 
-### 🏦 FII/DII
+### 🏦 Participant
 **FII / DII / Pro / Client** ke F&O positions (Open Interest + Trading Volume).
 - **Net = Long − Short** (contracts). 🟢 net long (bullish), 🔴 net short (bearish).
 - **Matlab:** FII ka rukh **market sentiment** dikhata hai — FII net long badh raha =
   big money bullish. (Ye **market-wide** hai, single-stock nahi.)
 
-### 🎯 Positioning
-**Real OI buildup** (price + OI change se) har stock ka — reliable, estimate nahi.
-- 4 counts: Long Buildup / Short Buildup / Short Covering / Long Unwinding
-- Market **scan + filter** — kaunse stocks me kya positioning
-- **Matlab:** neeche "OI buildup" glossary me 4 types explain.
-
-### 📊 Overview
-Saare ~210 stocks ka **math ek table me** — sort karke compare karo (Volatility,
+### 📊 Math stats
+Saare ~210 stocks ka **computed math ek table me** — sort karke compare karo (Volatility,
 Return, Sharpe, Beta, PCR, etc.). Symbol column + header **pinned** rehte hain;
 right scroll karke saare 18 columns dekho.
 
@@ -143,7 +131,7 @@ Sab **split/bonus-adjusted** hai (neeche note). Daily return `r = aaj ka close /
 
 ## ⚠️ 5. Important notes
 
-- **Estimated participant split** (Futures & Full view me): Real **per-stock** FII/DII data
+- **Estimated participant split** (Futures section me): Real **per-stock** FII/DII data
   publicly nahi milta. Isliye **market-wide** FII/DII/Pro/Client ka Future-Stock % lekar,
   us stock ke futures OI par **proportionally** laga diya. Ye ek **rough estimate** hai —
   exact nahi. FII/DII section ka data **real** hai (bas market-wide, single-stock nahi).
