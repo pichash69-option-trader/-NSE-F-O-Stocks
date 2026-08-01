@@ -17,7 +17,7 @@ Left **sidebar** me:
 |---|---|
 | **Stock** dropdown | Kaunsa stock dekhna hai (search bhi kar sakte ho) |
 | **Kitne din dekhne hain** | 7 / 20 / 50 / All — kitne din ka data |
-| **Menu (7 sections)** | Neeche explain kiye hain |
+| **Menu (6 sections)** | Neeche explain kiye hain |
 | **❓ How to use** | Ye guide |
 
 Upar **ticker bar** — us din ke **Top 5 gainers** (green line) aur **Top 5 losers**
