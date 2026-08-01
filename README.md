@@ -17,18 +17,17 @@ option chain**, and **FII/DII positioning** — with pure **statistical analysis
   the F&O universe is derived automatically from the latest F&O bhavcopy.
 - **Date-wise / timeline view** — pick a stock and a window (7 / 20 / 50 / All days) and
   see how everything evolved, latest day on top. Date sliders for fast scrubbing.
-- **7 sections** in a sidebar-navigation, glassmorphism UI (Outfit font, indigo/purple
-  premium theme, live top-movers ticker):
+- **6 sections** in a sidebar-navigation, glassmorphism UI (Outfit font, indigo/purple
+  premium theme, live top-movers ticker) — each maps to a data type:
 
 | Section | What it shows |
 |---|---|
-| 🔎 **Full view** | One stock's entire picture on a single page — metrics, OI buildup, math stats, futures, option chain, participant split |
-| 📈 **Stock (date-wise)** | Day-by-day OHLC, % change, volume, turnover, trades, delivery %; candlestick chart (hover for detail); split/bonus-adjusted |
-| 🔮 **Futures** | All three expiries (near/next/far): OHLC, settle, premium, OI + change, value, Σ total |
-| ⛓️ **Option chain** | Sensibull-style — ITM shading, OI bars, ATM highlight, PCR, max pain; a combined "sum chain" across expiries + each expiry's own chain + raw full-data table |
-| 🏦 **FII/DII** | Participant-wise (FII / DII / Pro / Client) F&O open interest & volume, net long/short |
-| 🎯 **Positioning** | Real OI buildup (Long/Short Buildup, Short Covering, Long Unwinding) + market-wide scan/filter |
-| 📊 **Overview** | All ~210 stocks' math stats in one sortable, scrollable table (sticky header + symbol) |
+| 📈 **Equity / Cash** | Day-by-day OHLC, prev close, settle, % change, volume, turnover, trades, delivery qty/%; candlestick chart (hover for detail); split/bonus-adjusted |
+| 🔮 **Futures** | All three expiries (near/next/far): OHLC, settle, premium, OI + change, contracts, value, Σ total + estimated participant split |
+| ⛓️ **Options** | Sensibull-style — ITM shading, OI bars, ATM highlight, PCR, max pain; a combined "sum chain" across expiries + each expiry's own chain with OHLC/settle/turnover inside |
+| 🏦 **Participant** | FII / DII / Pro / Client **sentiment** (OI + Volume, Bearish‹—›Bullish bars per segment) + net trend + cumulative-flow charts |
+| 📊 **Math stats** | All ~210 stocks' statistics in one sortable table (18 metrics + 1W/1M returns), sticky header + symbol |
+| 🎯 **Next-day shortlist** | Statistical screener — Momentum + Mean-reversion top-3 up/down for next day, with backtest hit-rate + date slider (past picks ✓/✗). *Educational only* |
 
 - **Auto-updating** — one command backfills from 1-Jan-2024 to today, then daily incremental.
 - **Holiday-aware fetching** — uses the NSE trading calendar, retries late-published data,

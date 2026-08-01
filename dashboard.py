@@ -4,12 +4,13 @@ dashboard.py — date-wise NSE dashboard (Streamlit), QuantCalc-style dark theme
 
 Run:  streamlit run dashboard.py
 
-Sidebar navigation = 5 data-type sections (each maps to a DB table):
-  1. Equity / Cash  — daily OHLCV + delivery + candle chart
-  2. Futures        — all expiries: OHLC/settle/OI/premium + Σ total
-  3. Options        — Sensibull sum-chain + per-expiry chains (OHLC/settle inside)
-  4. Participant    — FII/DII/Pro/Client sentiment (OI+Vol) + trend + flow
-  5. Math stats     — all-stock statistics table (returns/vol/beta/… + 1W/1M)
+Sidebar navigation = 6 sections (5 data-types + 1 screener):
+  1. Equity / Cash      — daily OHLCV + delivery + candle chart
+  2. Futures            — all expiries: OHLC/settle/OI/premium + Σ total
+  3. Options            — Sensibull sum-chain + per-expiry chains (OHLC/settle inside)
+  4. Participant        — FII/DII/Pro/Client sentiment (OI+Vol) + trend + flow
+  5. Math stats         — all-stock statistics table (returns/vol/beta/… + 1W/1M)
+  6. Next-day shortlist — Momentum + Mean-reversion screener + backtest (educational)
 """
 import numpy as np
 import pandas as pd
@@ -129,14 +130,13 @@ analysis **pure maths / stats** hai — **koi technical indicator nahi**.
 ### 🧭 Shuru kaise karein
 1. **Left sidebar** me se ek **stock** choose karo (jaise RELIANCE).
 2. **"Kitne din dekhne hain"** — 7 / 20 / 50 / All chuno.
-3. Sidebar ke **menu** (5 sections, data-type ke hisaab se) me data dekho
-   (date-wale sections me **slider** se din badlo).
+3. Sidebar ke **menu** (6 sections) me data dekho (date-wale sections me **slider** se din badlo).
 
 Upar **ticker** = us din ke **Top 5 gainers** (green) + **Top 5 losers** (red), EOD data se.
 
 ---
 
-## 🗂️ Sections (5 — har ek ek data-type)
+## 🗂️ Sections (6)
 
 **📈 Equity / Cash** — Selected stock ka cash-market data, din-b-din: OHLC, **Chg%**
 (green/red pill), **Volume & Delivery%** (bars), Turnover ₹Cr, Trades. Neeche **candle
@@ -153,7 +153,12 @@ apna chain (OHLC/Settle/Turnover chain ke andar hi). 🟧 CALLS ITM · 🟥 PUTS
 **Net = Long − Short**: 🟢 net long (bullish), 🔴 net short (bearish). Ye **market-wide** hai.
 
 **📊 Math stats** — Saare ~210 stocks ka computed math ek table me. **Sort by** se compare
-karo. Symbol + header pinned; right scroll = saare 18 columns.
+karo (+ **1D/1W/1M returns**). Symbol + header pinned; right scroll = saare columns.
+
+**🎯 Next-day shortlist** — Aaj ke data se **kal ke liye** shortlist. 2 strategies:
+**Momentum** (continuation) + **Mean-reversion** (contrarian), har ek me top 3 UP/DOWN
+(momentum + F&O + delivery% + PCR score, liquid stocks). **Backtest hit-rate** + date
+slider (past picks ✓/✗). ⚠️ **Educational/research — trading advice nahi.**
 
 ---
 

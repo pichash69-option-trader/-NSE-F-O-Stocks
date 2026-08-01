@@ -37,9 +37,9 @@ Upar **ticker bar** — us din ke **Top 5 gainers** (green line) aur **Top 5 los
 
 ---
 
-## 🗂️ 3. Sections (5 — har ek ek data-type) — kya, kis liye, aur matlab
+## 🗂️ 3. Sections (6) — kya, kis liye, aur matlab
 
-Navigation **data-type** ke hisaab se hai — sidebar me 5 sections, har ek DB ki ek table:
+Navigation sidebar me **6 sections** — 5 data-type (har ek DB ki ek table) + 1 screener:
 
 ### 📈 Equity / Cash
 Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%**
@@ -75,8 +75,19 @@ Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%*
 
 ### 📊 Math stats
 Saare ~210 stocks ka **computed math ek table me** — sort karke compare karo (Volatility,
-Return, Sharpe, Beta, PCR, etc.). Symbol column + header **pinned** rehte hain;
-right scroll karke saare 18 columns dekho.
+Return, Sharpe, Beta, PCR, **1D/1W/1M returns**, etc.). Symbol column + header **pinned**
+rehte hain; right scroll karke saare columns dekho.
+
+### 🎯 Next-day shortlist
+Aaj ke data se **kal ke liye shortlist** — 2 opposite strategies:
+- **Momentum (continuation)** — aaj strong up + fresh long buildup → kal bhi UP.
+- **Mean-reversion (contrarian)** — aaj bahut stretched/overbought → kal ULTA (pullback).
+Har ek me **top 3 UP / 3 DOWN**, composite score se (signals: momentum + F&O positioning +
+delivery% + PCR), sirf **liquid stocks**.
+- **Backtest hit-rate** — strategy history me kitni baar sahi thi (50% = coin-flip).
+- **Date slider** — kisi bhi past din ka shortlist + **kal ka actual result ✓/✗**.
+- **⚠️ Matlab:** ye **educational/research screener** hai — guaranteed prediction ya
+  trading advice **NAHI**. Trade apne research + risk pe.
 
 ---
 
