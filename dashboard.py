@@ -26,6 +26,7 @@ from render import (  # presentation layer (HTML tables + CSS)
     _fmt, CHAIN_LEGEND, _participant_nets,
     render_picks, render_chain, render_stock_table, render_overview_table,
     render_futures_table, render_participant_sentiment, render_est_split,
+    render_compare,
 )
 from config import NIFTY50
 
@@ -520,7 +521,7 @@ def ticker_html():
 # Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
 SECTIONS = ["📈 Equity / Cash", "🔮 Futures", "⛓️ Options",
-            "🏦 Participant", "📊 Math stats", "🎯 Next-day shortlist"]
+            "🏦 Participant", "📊 Math stats", "⚖️ Compare", "🎯 Next-day shortlist"]
 
 with st.sidebar:
     st.markdown(
@@ -903,6 +904,55 @@ elif section == "📊 Math stats":
                    "= momentum across timeframes · **Sortino** = downside-adjusted return · "
                    "**Calmar** = CAGR ÷ max-drawdown · **VaR%** = 5% worst-day loss · bars = "
                    "volatility & 52-week position. Split/bonus-adjusted. Right scroll = saare columns.")
+
+# =========================================================================== #
+# TAB — Compare (multi-stock side-by-side)
+# =========================================================================== #
+elif section == "⚖️ Compare":
+    st.subheader("Multi-stock compare — side by side")
+    picks = st.multiselect("Stocks compare karo (2–5)", all_symbols(),
+                           default=[symbol], max_selections=5)
+    if len(picks) < 2:
+        st.info("Kam se kam **2 stocks** chuno compare ke liye (upar dropdown se).")
+    else:
+        # --- Normalized price chart (rebased to 100 at window start) ---
+        win = None if lookback == "All" else int(lookback)
+        palette = ["#6366f1", "#f59e0b", "#10b981", "#f43f5e", "#a855f7"]
+        fig = go.Figure()
+        for i, s in enumerate(picks):
+            h = stock_history(s)
+            if h.empty:
+                continue
+            v = h if win is None else h.tail(win)
+            if v.empty or v["close"].iloc[0] == 0:
+                continue
+            fig.add_trace(go.Scatter(
+                x=v["date"], y=v["close"] / v["close"].iloc[0] * 100, name=s,
+                mode="lines", line=dict(color=palette[i % len(palette)], width=2)))
+        fig.add_hline(y=100, line_dash="dot", line_color="#6b7280")
+        fig.update_layout(height=340, margin=dict(l=0, r=0, t=10, b=0),
+                          legend=dict(orientation="h", y=1.12),
+                          yaxis_title="Rebased to 100")
+        fig.update_xaxes(type="category", nticks=8)
+        st.plotly_chart(fig, width="stretch")
+        st.caption("Price **rebased to 100** at window start — upar wali line = zyada return "
+                   "(window = sidebar 'Kitne din dekhne hain').")
+
+        # --- Side-by-side stats table ---
+        ph = ",".join("?" * len(picks))
+        comp = q(f"""SELECT symbol, daily_return, cagr, ann_volatility, sharpe, beta,
+                            max_drawdown, pct_rank_52w, put_call_ratio
+                     FROM stats WHERE symbol IN ({ph})""", tuple(picks))
+        cl = q(f"SELECT symbol, close FROM prices WHERE date=(SELECT MAX(date) FROM prices) "
+               f"AND symbol IN ({ph})", tuple(picks))
+        comp = (comp.merge(cl, on="symbol", how="left")
+                    .merge(window_returns().reset_index(), on="symbol", how="left")
+                    .merge(extra_stats().reset_index(), on="symbol", how="left")
+                    .set_index("symbol").reindex(picks))
+        st.markdown("#### 📊 Side-by-side stats")
+        st.markdown(render_compare(comp), unsafe_allow_html=True)
+        download_csv(comp.reset_index(), "⬇️ Download compare (CSV)", "compare.csv",
+                     key="dl_cmp")
 
 # =========================================================================== #
 # TAB — Next-day shortlist (statistical screener; educational, NOT advice)

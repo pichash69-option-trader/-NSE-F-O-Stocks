@@ -539,3 +539,49 @@ def render_est_split(part, stock_oi):
             '<thead><tr><th class="l">Participant</th>'
             '<th>Market share (Fut Stock)</th><th>Est. contracts (is stock me)</th>'
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
+
+
+# --------------------------------------------------------------------------- #
+# Multi-stock compare — transposed table (metrics as rows, stocks as columns)
+# --------------------------------------------------------------------------- #
+_COMPARE_ROWS = [
+    ("Last close", "close", 1, "{:.2f}", False),
+    ("1D %", "daily_return", 100, "{:+.2f}", True),
+    ("1W %", "ret_1w", 1, "{:+.1f}", True),
+    ("1M %", "ret_1m", 1, "{:+.1f}", True),
+    ("3M %", "ret_3m", 1, "{:+.1f}", True),
+    ("1Y %", "ret_1y", 1, "{:+.1f}", True),
+    ("CAGR %", "cagr", 100, "{:+.1f}", True),
+    ("Ann Vol %", "ann_volatility", 100, "{:.1f}", False),
+    ("Sharpe", "sharpe", 1, "{:+.2f}", True),
+    ("Sortino", "sortino", 1, "{:+.2f}", True),
+    ("Beta", "beta", 1, "{:.2f}", False),
+    ("Max DD %", "max_drawdown", 100, "{:.1f}", False),
+    ("VaR %", "var5", 1, "{:.2f}", False),
+    ("52w %ile", "pct_rank_52w", 1, "{:.0f}", False),
+    ("PCR", "put_call_ratio", 1, "{:.2f}", False),
+]
+
+
+def render_compare(comp):
+    """Side-by-side comparison: metrics as rows, selected stocks as columns."""
+    if comp is None or comp.empty:
+        return "<i>—</i>"
+    stocks = list(comp.index)
+    head = "".join(f"<th>{s}</th>" for s in stocks)
+    body = []
+    for label, col, scale, fmt, colored in _COMPARE_ROWS:
+        cells = []
+        for s in stocks:
+            v = comp.loc[s, col] if col in comp.columns else None
+            if v is None or pd.isna(v):
+                cells.append("<td>—</td>")
+                continue
+            v = v * scale
+            cls = ("up" if v >= 0 else "dn") if colored else ("dn" if col == "max_drawdown" else "")
+            cells.append(f'<td class="{cls}">{fmt.format(v)}</td>')
+        body.append(f'<tr><td class="date" style="font-weight:600">{label}</td>{"".join(cells)}</tr>')
+    return (STOCK_CSS +
+            '<div style="overflow-x:auto"><table class="stbl" style="min-width:360px">'
+            f'<thead><tr><th class="l">Metric</th>{head}</tr></thead>'
+            f'<tbody>{"".join(body)}</tbody></table></div>')
