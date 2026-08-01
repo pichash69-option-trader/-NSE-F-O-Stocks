@@ -22,11 +22,12 @@ import plotly.graph_objects as go
 
 import db
 import analysis
+import sectors
 from render import (  # presentation layer (HTML tables + CSS)
     _fmt, CHAIN_LEGEND, _participant_nets,
     render_picks, render_chain, render_stock_table, render_overview_table,
     render_futures_table, render_participant_sentiment, render_est_split,
-    render_compare,
+    render_compare, render_sector_table,
 )
 from config import NIFTY50
 
@@ -520,8 +521,8 @@ def ticker_html():
 # --------------------------------------------------------------------------- #
 # Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
-SECTIONS = ["📈 Equity / Cash", "🔮 Futures", "⛓️ Options",
-            "🏦 Participant", "📊 Math stats", "⚖️ Compare", "🎯 Next-day shortlist"]
+SECTIONS = ["📈 Equity / Cash", "🔮 Futures", "⛓️ Options", "🏦 Participant",
+            "📊 Math stats", "🏭 Sectors", "⚖️ Compare", "🎯 Next-day shortlist"]
 
 with st.sidebar:
     st.markdown(
@@ -904,6 +905,55 @@ elif section == "📊 Math stats":
                    "= momentum across timeframes · **Sortino** = downside-adjusted return · "
                    "**Calmar** = CAGR ÷ max-drawdown · **VaR%** = 5% worst-day loss · bars = "
                    "volatility & 52-week position. Split/bonus-adjusted. Right scroll = saare columns.")
+
+# =========================================================================== #
+# TAB — Sectors (sector-wise performance)
+# =========================================================================== #
+elif section == "🏭 Sectors":
+    st.subheader("Sector-wise performance")
+    base = q("SELECT symbol, ann_volatility, put_call_ratio, daily_return FROM stats")
+    if base.empty:
+        st.info("Stats abhi nahi. `python analysis.py` chalao.")
+    else:
+        df = (base.merge(window_returns().reset_index(), on="symbol", how="left")
+                  .merge(extra_stats().reset_index()[["symbol", "ret_1y"]],
+                         on="symbol", how="left"))
+        df["ret_1d"] = df["daily_return"] * 100
+        df["ann_vol"] = df["ann_volatility"] * 100
+        df["sector"] = df["symbol"].map(sectors.sector_of)
+        agg = (df.groupby("sector").agg(
+                   n=("symbol", "count"), ret_1d=("ret_1d", "mean"),
+                   ret_1w=("ret_1w", "mean"), ret_1m=("ret_1m", "mean"),
+                   ret_1y=("ret_1y", "mean"), ann_vol=("ann_vol", "mean"),
+                   pcr=("put_call_ratio", "mean")).reset_index()
+                 .sort_values("ret_1m", ascending=False))
+
+        # avg 1-month return per sector (horizontal bar)
+        st.markdown("#### 📊 Avg 1-month return by sector")
+        bfig = go.Figure(go.Bar(
+            x=agg["ret_1m"], y=agg["sector"], orientation="h",
+            marker_color=["#10b981" if v >= 0 else "#f43f5e" for v in agg["ret_1m"]],
+            text=[f"{v:+.1f}%" for v in agg["ret_1m"]], textposition="auto"))
+        bfig.update_layout(height=420, margin=dict(l=0, r=0, t=8, b=0),
+                           xaxis_title="Avg 1M return %", yaxis=dict(autorange="reversed"))
+        st.plotly_chart(bfig, width="stretch")
+
+        st.markdown("#### 📋 Sector summary")
+        st.markdown(render_sector_table(agg), unsafe_allow_html=True)
+        download_csv(agg, "⬇️ Download sector summary (CSV)", "sectors.csv", key="dl_sec")
+
+        # drill-down — stocks in a sector
+        st.markdown("#### 🔎 Sector drill-down")
+        sec = st.selectbox("Sector chuno", agg["sector"].tolist())
+        show = (df[df["sector"] == sec]
+                [["symbol", "ret_1d", "ret_1w", "ret_1m", "ret_1y", "ann_vol",
+                  "put_call_ratio"]]
+                .rename(columns={"ret_1d": "1D%", "ret_1w": "1W%", "ret_1m": "1M%",
+                                 "ret_1y": "1Y%", "ann_vol": "Ann Vol%",
+                                 "put_call_ratio": "PCR"})
+                .sort_values("1M%", ascending=False).round(2))
+        st.caption(f"**{sec}** — {len(show)} stocks (1M return se sorted)")
+        st.dataframe(show, width="stretch", hide_index=True)
 
 # =========================================================================== #
 # TAB — Compare (multi-stock side-by-side)

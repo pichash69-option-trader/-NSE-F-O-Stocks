@@ -585,3 +585,31 @@ def render_compare(comp):
             '<div style="overflow-x:auto"><table class="stbl" style="min-width:360px">'
             f'<thead><tr><th class="l">Metric</th>{head}</tr></thead>'
             f'<tbody>{"".join(body)}</tbody></table></div>')
+
+
+# --------------------------------------------------------------------------- #
+# Sector-wise aggregate table
+# --------------------------------------------------------------------------- #
+def render_sector_table(agg):
+    """Sector rows: # stocks + avg returns (1D/1W/1M/1Y) + avg vol + avg PCR."""
+    if agg is None or agg.empty:
+        return "<i>—</i>"
+
+    def c(v, fmt="{:+.1f}"):
+        cls = "up" if (v or 0) >= 0 else "dn"
+        return f'<span class="{cls}">{fmt.format(v)}</span>' if pd.notna(v) else "—"
+
+    rows = []
+    for _, r in agg.iterrows():
+        rows.append(
+            f'<tr><td class="date" style="font-weight:600">{r["sector"]}</td>'
+            f'<td>{int(r["n"])}</td>'
+            f'<td>{c(r["ret_1d"])}%</td><td>{c(r["ret_1w"])}%</td>'
+            f'<td>{c(r["ret_1m"])}%</td><td>{c(r["ret_1y"])}%</td>'
+            f'<td>{r["ann_vol"]:.1f}%</td><td>{r["pcr"]:.2f}</td></tr>')
+    return (STOCK_CSS +
+            '<div style="overflow-x:auto"><table class="stbl" style="min-width:520px">'
+            '<thead><tr><th class="l">Sector</th><th># stocks</th>'
+            '<th>Avg 1D%</th><th>Avg 1W%</th><th>Avg 1M%</th><th>Avg 1Y%</th>'
+            '<th>Avg Vol%</th><th>Avg PCR</th></tr></thead><tbody>'
+            + "".join(rows) + '</tbody></table></div>')
