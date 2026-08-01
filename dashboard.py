@@ -393,6 +393,23 @@ def vix_series():
     return q("SELECT date, open, high, low, close, chg_pct FROM vix ORDER BY date")
 
 
+@st.cache_data(ttl=300)
+def sector_daily_returns():
+    """Per (date, sector) average 1-day return % — split-adjusted. Long frame:
+    columns date, sector, n, avg_ret. Powers the day-by-day sector view."""
+    px = q("SELECT symbol, date, close FROM prices")
+    if px.empty:
+        return pd.DataFrame(columns=["date", "sector", "n", "avg_ret"])
+    wide = analysis.adjust_for_splits(
+        px.pivot(index="date", columns="symbol", values="close").sort_index())
+    rets = wide.pct_change() * 100
+    long = rets.stack().reset_index()
+    long.columns = ["date", "symbol", "ret"]
+    long["sector"] = long["symbol"].map(sectors.sector_of)
+    return (long.groupby(["date", "sector"])
+                .agg(n=("ret", "count"), avg_ret=("ret", "mean")).reset_index())
+
+
 # --------------------------------------------------------------------------- #
 # Next-day shortlist — statistical screener (educational, NOT advice)
 # --------------------------------------------------------------------------- #
@@ -911,6 +928,28 @@ elif section == "📊 Math stats":
 # =========================================================================== #
 elif section == "🏭 Sectors":
     st.subheader("Sector-wise performance")
+
+    # --- Day-by-day: slider picks a date → that day's sector returns ---
+    pdates = q("SELECT DISTINCT date FROM prices ORDER BY date DESC")["date"].tolist()
+    seld = date_slider("📅 Kis din ka sector performance (din-b-din)", pdates, "sector_date")
+    dayagg = sector_daily_returns()
+    dayagg = dayagg[dayagg["date"] == seld].sort_values("avg_ret", ascending=False)
+    st.markdown(f"#### 📊 {seld} — us din har sector ka avg 1-day return")
+    if dayagg.empty:
+        st.info("Us din ka sector data nahi.")
+    else:
+        dfig = go.Figure(go.Bar(
+            x=dayagg["avg_ret"], y=dayagg["sector"], orientation="h",
+            marker_color=["#10b981" if v >= 0 else "#f43f5e" for v in dayagg["avg_ret"]],
+            text=[f"{v:+.2f}%" for v in dayagg["avg_ret"]], textposition="auto"))
+        dfig.update_layout(height=420, margin=dict(l=0, r=0, t=8, b=0),
+                           xaxis_title=f"Avg 1-day return on {seld} %",
+                           yaxis=dict(autorange="reversed"))
+        st.plotly_chart(dfig, width="stretch")
+        st.caption("Slider se **pichhle din scrub** karo — us din kaunsa sector chala/gira "
+                   "(din-b-din sector rotation).")
+
+    st.divider()
     base = q("SELECT symbol, ann_volatility, put_call_ratio, daily_return FROM stats")
     if base.empty:
         st.info("Stats abhi nahi. `python analysis.py` chalao.")
@@ -928,17 +967,7 @@ elif section == "🏭 Sectors":
                    pcr=("put_call_ratio", "mean")).reset_index()
                  .sort_values("ret_1m", ascending=False))
 
-        # avg 1-month return per sector (horizontal bar)
-        st.markdown("#### 📊 Avg 1-month return by sector")
-        bfig = go.Figure(go.Bar(
-            x=agg["ret_1m"], y=agg["sector"], orientation="h",
-            marker_color=["#10b981" if v >= 0 else "#f43f5e" for v in agg["ret_1m"]],
-            text=[f"{v:+.1f}%" for v in agg["ret_1m"]], textposition="auto"))
-        bfig.update_layout(height=420, margin=dict(l=0, r=0, t=8, b=0),
-                           xaxis_title="Avg 1M return %", yaxis=dict(autorange="reversed"))
-        st.plotly_chart(bfig, width="stretch")
-
-        st.markdown("#### 📋 Sector summary")
+        st.markdown("#### 📋 Trailing performance (as of latest — avg 1D/1W/1M/1Y)")
         st.markdown(render_sector_table(agg), unsafe_allow_html=True)
         download_csv(agg, "⬇️ Download sector summary (CSV)", "sectors.csv", key="dl_sec")
 
