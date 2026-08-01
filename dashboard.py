@@ -12,6 +12,9 @@ Sidebar navigation = 6 sections (5 data-types + 1 screener):
   5. Math stats         — all-stock statistics table (returns/vol/beta/… + 1W/1M)
   6. Next-day shortlist — Momentum + Mean-reversion screener + backtest (educational)
 """
+import os
+import json
+
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -20,6 +23,34 @@ import plotly.graph_objects as go
 import db
 import analysis
 from config import NIFTY50
+
+# Watchlist — saved locally (per-machine, gitignored).
+WATCHLIST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "watchlist.json")
+
+
+def load_watchlist():
+    try:
+        with open(WATCHLIST_FILE, encoding="utf-8") as f:
+            wl = json.load(f)
+        return [s for s in wl if isinstance(s, str)]
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return []
+
+
+def save_watchlist(wl):
+    try:
+        with open(WATCHLIST_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(dict.fromkeys(wl)), f)      # de-dup, keep order
+    except OSError:
+        pass
+
+
+def download_csv(df, label, filename, key=None):
+    """Small CSV download button for a DataFrame."""
+    if df is None or df.empty:
+        return
+    st.download_button(label, df.to_csv(index=False).encode("utf-8"),
+                       file_name=filename, mime="text/csv", key=key)
 
 st.set_page_config(page_title="NSE F&O — date-wise", layout="wide")
 
@@ -991,8 +1022,22 @@ with st.sidebar:
         '<div class="sub">date-wise analytics</div></div></div>',
         unsafe_allow_html=True)
 
-    # Stock controls — on top, above the navigation menu
-    symbol = st.selectbox("Stock", all_symbols(), index=0)
+    # Stock controls — watchlist ⭐ pinned to top of the dropdown
+    _wl = load_watchlist()
+    _all = all_symbols()
+    _starred = [s for s in _wl if s in _all]
+    _opts = _starred + [s for s in _all if s not in _starred]
+    symbol = st.selectbox("Stock", _opts, index=0, key="stock",
+                          format_func=lambda s: f"⭐ {s}" if s in _wl else s)
+    wc1, wc2 = st.columns([3, 2])
+    if symbol in _wl:
+        if wc1.button("★ Remove from watchlist", use_container_width=True):
+            _wl.remove(symbol); save_watchlist(_wl); st.rerun()
+    else:
+        if wc1.button("☆ Add to watchlist", use_container_width=True):
+            save_watchlist(_wl + [symbol]); st.rerun()
+    wc2.caption(f"⭐ {len(_starred)} saved" if _starred else "no ⭐ yet")
+
     lookback = st.radio("Kitne din dekhne hain", [7, 20, 50, "All"], index=1,
                         horizontal=True)
 
@@ -1036,6 +1081,8 @@ if section == "📈 Equity / Cash":
         # --- 1. Stock all-data table (glanceable, latest din upar) ---
         st.markdown("#### 1 · Stock — all data (din-b-din)")
         st.markdown(render_stock_table(view), unsafe_allow_html=True)
+        download_csv(view, f"⬇️ Download {symbol} data (CSV)",
+                     f"{symbol}_equity.csv", key="dl_equity")
 
         # --- Day range (candle) chart — hover par saari details ---
         st.markdown("**Day range (candle)** — kisi bhi candle par hover karo")
@@ -1089,6 +1136,8 @@ elif section == "🔮 Futures":
                    FROM futures WHERE symbol=? AND date=? ORDER BY expiry""",
                 (symbol, fdate))
         st.markdown(render_futures_table(fut, fspot_px), unsafe_allow_html=True)
+        download_csv(fut, f"⬇️ Download {symbol} futures (CSV)",
+                     f"{symbol}_futures_{fdate}.csv", key="dl_fut")
 
         # --- 2. Estimated participant split (proportional estimate) ---
         st.markdown("#### 2 · Estimated participant split")
@@ -1130,6 +1179,12 @@ elif section == "⛓️ Options":
             lo, hi = max(0, atm_i - strike_win), atm_i + strike_win + 1
             return df.iloc[lo:hi]
 
+        _optraw = q("""SELECT expiry, strike, opt_type, open, high, low, close, settle,
+                              volume, value_lakh, oi, chg_oi FROM options
+                       WHERE symbol=? AND date=? ORDER BY expiry, strike, opt_type""",
+                    (symbol, odate))
+        download_csv(_optraw, f"⬇️ Download full option chain (CSV) — {odate}",
+                     f"{symbol}_options_{odate}.csv", key="dl_opt")
         st.markdown(CHAIN_LEGEND, unsafe_allow_html=True)
 
         # SUM CHAIN (upar) — Sensibull style
@@ -1270,6 +1325,8 @@ elif section == "🏦 Participant":
                     "total_long,total_short FROM participant WHERE date=? "
                     "ORDER BY metric,client_type", (pdate,))
             st.dataframe(raw, width="stretch", hide_index=True)
+            download_csv(raw, "⬇️ Download participant data (CSV)",
+                         f"participant_{pdate}.csv", key="dl_part")
 
 # =========================================================================== #
 # TAB — overview (all-stock math stats)
@@ -1304,6 +1361,8 @@ elif section == "📊 Math stats":
         col, asc = sort_opts[choice]
         stats = stats.sort_values(col, ascending=asc, na_position="last")
         st.markdown(render_overview_table(stats), unsafe_allow_html=True)
+        download_csv(stats, "⬇️ Download math stats (CSV)", "nse_math_stats.csv",
+                     key="dl_stats")
         st.caption("Green = up / positive, red = down / negative · **Day Ret% · 1W% · 1M%** "
                    "= trend across timeframes (momentum) · bars = volatility & 52-week "
                    "position. Split/bonus-adjusted. Right scroll = saare columns.")
@@ -1371,6 +1430,10 @@ elif section == "🎯 Next-day shortlist":
             st.markdown("🔴 **DOWN** (overbought):")
             st.markdown(render_picks(td.sort_values("bull_rev").head(k),
                                      "bull_rev", "down", past), unsafe_allow_html=True)
+        _sl = td[["symbol", "ret_1d", "ret_1w", "buildup_val", "premium_pct", "pcr",
+                  "bull_mom", "bull_rev", "ret_next"]].sort_values("bull_mom", ascending=False)
+        download_csv(_sl, f"⬇️ Download {sel} scored list (CSV)",
+                     f"shortlist_{sel}.csv", key="dl_shortlist")
         st.caption("Columns: **1D%** (us din ka move) · **Buildup** (OI se) · **Prem%** "
                    "(futures premium) · **PCR** · **Score** (composite). Past din pe **Kal%** "
                    "= agle din ka actual move · **✓** = shortlist sahi, **✗** = galat. "

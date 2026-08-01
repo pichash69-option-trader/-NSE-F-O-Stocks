@@ -25,3 +25,6 @@ Thumbs.db
 
 # Claude / local tooling
 .claude/
+
+# User watchlist (local)
+watchlist.json
