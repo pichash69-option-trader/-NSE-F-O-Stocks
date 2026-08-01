@@ -359,6 +359,32 @@ def window_returns():
     return pd.DataFrame({"ret_1w": wret(5), "ret_1m": wret(20)})
 
 
+@st.cache_data(ttl=300)
+def extra_stats():
+    """Longer-window returns (3M/6M/1Y) + downside risk (Sortino, 5% VaR) per
+    stock, from split-adjusted daily closes. Index = symbol. (Calmar is derived
+    in the Math-stats view from cagr / |max_drawdown|.)"""
+    px = q("SELECT symbol, date, close FROM prices")
+    if px.empty:
+        return pd.DataFrame(columns=["ret_3m", "ret_6m", "ret_1y", "sortino", "var5"])
+    wide = analysis.adjust_for_splits(
+        px.pivot(index="date", columns="symbol", values="close").sort_index())
+    rets = wide.pct_change()
+    n = len(wide)
+
+    def wret(k):
+        if n <= k:
+            return pd.Series(index=wide.columns, dtype=float)
+        return (wide.iloc[-1] / wide.iloc[-1 - k] - 1) * 100
+
+    downside = rets[rets < 0].std()                       # std of negative days only
+    return pd.DataFrame({
+        "ret_3m": wret(63), "ret_6m": wret(126), "ret_1y": wret(252),
+        "sortino": rets.mean() / downside,                # mean / downside deviation
+        "var5": -rets.quantile(0.05) * 100,               # 5% historical VaR (loss %)
+    })
+
+
 # --------------------------------------------------------------------------- #
 # Next-day shortlist — statistical screener (educational, NOT advice)
 # --------------------------------------------------------------------------- #
@@ -816,16 +842,24 @@ elif section == "📊 Math stats":
     if stats.empty:
         st.info("Stats abhi nahi. `python analysis.py` chalao.")
     else:
-        # Add-on: multi-window returns (trend) — 1D already = Day Ret%; add 1W + 1M.
-        stats = stats.merge(window_returns(), left_on="symbol",
-                            right_index=True, how="left")
+        # Add-ons: multi-window returns (1W/1M/3M/6M/1Y) + downside risk
+        # (Sortino/VaR) + Calmar (= CAGR / |max drawdown|).
+        stats = (stats.merge(window_returns(), left_on="symbol", right_index=True, how="left")
+                      .merge(extra_stats(), left_on="symbol", right_index=True, how="left"))
+        stats["calmar"] = stats["cagr"] / stats["max_drawdown"].abs().replace(0, np.nan)
         sort_opts = {
             "1-day return (zyada → kam)": ("daily_return", False),
             "1-week return (zyada → kam)": ("ret_1w", False),
             "1-month return (zyada → kam)": ("ret_1m", False),
+            "3-month return (zyada → kam)": ("ret_3m", False),
+            "6-month return (zyada → kam)": ("ret_6m", False),
+            "1-year return (zyada → kam)": ("ret_1y", False),
             "Volatility (zyada → kam)": ("ann_volatility", False),
             "Return — poora period (zyada → kam)": ("cum_return", False),
             "Sharpe (best → worst)": ("sharpe", False),
+            "Sortino (best → worst)": ("sortino", False),
+            "Calmar (best → worst)": ("calmar", False),
+            "VaR 5% (zyada risk → kam)": ("var5", False),
             "Max drawdown (bada → chhota)": ("max_drawdown", True),
             "Beta (zyada → kam)": ("beta", False),
             "52w %ile (high → low)": ("pct_rank_52w", False),
@@ -838,9 +872,10 @@ elif section == "📊 Math stats":
         st.markdown(render_overview_table(stats), unsafe_allow_html=True)
         download_csv(stats, "⬇️ Download math stats (CSV)", "nse_math_stats.csv",
                      key="dl_stats")
-        st.caption("Green = up / positive, red = down / negative · **Day Ret% · 1W% · 1M%** "
-                   "= trend across timeframes (momentum) · bars = volatility & 52-week "
-                   "position. Split/bonus-adjusted. Right scroll = saare columns.")
+        st.caption("Green = up / positive, red = down / negative · **1D/1W/1M/3M/6M/1Y%** "
+                   "= momentum across timeframes · **Sortino** = downside-adjusted return · "
+                   "**Calmar** = CAGR ÷ max-drawdown · **VaR%** = 5% worst-day loss · bars = "
+                   "volatility & 52-week position. Split/bonus-adjusted. Right scroll = saare columns.")
 
 # =========================================================================== #
 # TAB — Next-day shortlist (statistical screener; educational, NOT advice)

@@ -278,7 +278,10 @@ def render_overview_table(df):
             f'<td class="bar-cell">{volcell}</td>'
             f'<td>{num(r["volatility"]*100, "{:.2f}")}%</td>'
             f'<td>{col(r["sharpe"], "{:+.2f}")}</td>'
+            f'<td>{col(r.get("sortino"), "{:+.2f}")}</td>'
+            f'<td>{col(r.get("calmar"), "{:+.2f}")}</td>'
             f'<td><span class="dn">{dd:.1f}%</span></td>'
+            f'<td><span class="dn">{num(r.get("var5"), "{:.2f}")}%</span></td>'
             f'<td>{num(r["beta"])}</td>'
             f'<td>{col(r["zscore"], "{:+.2f}")}</td>'
             f'<td class="bar-cell">{p52cell}</td>'
@@ -287,6 +290,9 @@ def render_overview_table(df):
             f'<td>{col(r["daily_return"]*100 if pd.notna(r["daily_return"]) else None)}%</td>'
             f'<td>{col(r.get("ret_1w"), "{:+.1f}")}%</td>'
             f'<td>{col(r.get("ret_1m"), "{:+.1f}")}%</td>'
+            f'<td>{col(r.get("ret_3m"), "{:+.1f}")}%</td>'
+            f'<td>{col(r.get("ret_6m"), "{:+.1f}")}%</td>'
+            f'<td>{col(r.get("ret_1y"), "{:+.1f}")}%</td>'
             f'<td>{col(r["mean_return"]*100 if pd.notna(r["mean_return"]) else None, "{:+.3f}")}%</td>'
             f'<td>{pcr}</td>'
             f'<td>{_fmt(r["total_oi"])}</td>'
@@ -296,9 +302,11 @@ def render_overview_table(df):
             '<div class="ovwrap"><table class="stbl ovtbl">'
             '<thead><tr>'
             '<th class="l">Symbol</th><th>Return%</th><th>CAGR%</th><th>Ann Vol</th>'
-            '<th>Daily Vol</th><th>Sharpe</th><th>Max DD</th><th>Beta</th>'
+            '<th>Daily Vol</th><th>Sharpe</th><th>Sortino</th><th>Calmar</th>'
+            '<th>Max DD</th><th>VaR%</th><th>Beta</th>'
             '<th>Z-score</th><th>52w %ile</th><th>Skew</th><th>Kurt</th>'
-            '<th>Day Ret%</th><th>1W%</th><th>1M%</th><th>Mean Ret%</th><th>PCR</th><th>Total OI</th>'
+            '<th>Day Ret%</th><th>1W%</th><th>1M%</th><th>3M%</th><th>6M%</th><th>1Y%</th>'
+            '<th>Mean Ret%</th><th>PCR</th><th>Total OI</th>'
             '<th>OI Chg</th><th>Fut Prem</th>'
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
@@ -310,7 +318,7 @@ OVERVIEW_CSS = """
 .ovwrap::-webkit-scrollbar{height:10px;width:10px;}
 .ovwrap::-webkit-scrollbar-thumb{background:#6366f1;border-radius:6px;}
 .ovwrap::-webkit-scrollbar-track{background:rgba(255,255,255,.04);}
-.ovtbl{min-width:1200px;font-size:11.5px;}
+.ovtbl{min-width:1560px;font-size:11.5px;}
 .ovtbl th{position:sticky;top:0;z-index:2;background:#0c1020;padding:6px 7px;}
 .ovtbl th.l{left:0;z-index:3;}
 .ovtbl td{padding:4px 7px;}
