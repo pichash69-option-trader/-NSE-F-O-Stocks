@@ -28,3 +28,6 @@ Thumbs.db
 
 # User watchlist (local)
 watchlist.json
+
+# DB backups (large, local)
+backups/

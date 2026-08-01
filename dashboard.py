@@ -539,7 +539,8 @@ def ticker_html():
 # Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
 SECTIONS = ["📈 Equity / Cash", "🔮 Futures", "⛓️ Options", "🏦 Participant",
-            "📊 Math stats", "🏭 Sectors", "⚖️ Compare", "🎯 Next-day shortlist"]
+            "📊 Math stats", "🏭 Sectors", "⚖️ Compare", "🎯 Next-day shortlist",
+            "🩺 Data health"]
 
 with st.sidebar:
     st.markdown(
@@ -1105,3 +1106,46 @@ elif section == "🎯 Next-day shortlist":
                    "= agle din ka actual move · **✓** = shortlist sahi, **✗** = galat. "
                    "Slider se pichhle din scrub karke dekho strategy kaisa chala.")
 
+
+# =========================================================================== #
+# TAB — Data health (pipeline status, gaps, row counts, nulls)
+# =========================================================================== #
+elif section == "🩺 Data health":
+    st.subheader("Data health — kya data hai, kahan gap")
+    st.caption("Data pipeline status — latest dates, gaps (pending/error), row counts, nulls.")
+
+    dsmap = {"equity": "Equity", "fno": "F&O", "participant": "Participant", "vix": "India VIX"}
+    cols = st.columns(len(dsmap))
+    for i, (ds, label) in enumerate(dsmap.items()):
+        d = q("SELECT MAX(date) d FROM ingest_log WHERE dataset=? AND status='ok'", (ds,))
+        cols[i].metric(f"{label} — latest", d["d"].iloc[0] or "—")
+
+    st.markdown("#### Ingest status (per dataset)")
+    st.caption("ok = data hai · holiday = market band · **pending/error = gap (agle run pe retry)**")
+    srows = []
+    for ds, label in dsmap.items():
+        cnt = q("SELECT status, COUNT(*) n FROM ingest_log WHERE dataset=? GROUP BY status", (ds,))
+        cd = dict(zip(cnt["status"], cnt["n"]))
+        srows.append({"Dataset": label, "ok": cd.get("ok", 0), "holiday": cd.get("holiday", 0),
+                      "pending": cd.get("pending", 0), "error": cd.get("error", 0)})
+    st.dataframe(pd.DataFrame(srows), hide_index=True, width="stretch")
+
+    gaps = q("SELECT dataset, date, status FROM ingest_log "
+             "WHERE status IN ('pending','error') ORDER BY date DESC")
+    if gaps.empty:
+        st.success("✅ Koi gap nahi — saara data ok/holiday. Pipeline clean.")
+    else:
+        st.warning(f"⚠️ {len(gaps)} din pending/error — agle `python run_daily.py` pe auto-retry honge.")
+        st.dataframe(gaps, hide_index=True, width="stretch")
+
+    st.markdown("#### Tables & data quality")
+    checks = []
+    for t in ["prices", "futures", "participant", "stats", "vix"]:
+        n = q(f"SELECT COUNT(*) n FROM {t}")["n"].iloc[0]
+        checks.append({"Table": t, "rows": int(n)})
+    st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")
+    nc = q("SELECT COUNT(*) n FROM prices WHERE close IS NULL")["n"].iloc[0]
+    nb = q("SELECT COUNT(*) n FROM stats WHERE beta IS NULL")["n"].iloc[0]
+    st.caption(f"Null checks — **prices.close** nulls: {nc} · **stats.beta** nulls: {nb} "
+               "(0 = clean). `options` table (~18M rows) ka count skip kiya (slow scan). "
+               "Backup ke liye: `python backup_db.py`.")
