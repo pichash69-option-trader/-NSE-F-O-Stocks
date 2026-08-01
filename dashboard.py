@@ -745,7 +745,7 @@ def render_overview_table(df):
 # Compact + clearly-scrollable styling for the wide 18-column overview table.
 OVERVIEW_CSS = """
 <style>
-.ovwrap{overflow-x:auto;overflow-y:auto;max-height:70vh;
+.ovwrap{overflow-x:auto;
   border:1px solid rgba(255,255,255,.06);border-radius:10px;}
 .ovwrap::-webkit-scrollbar{height:10px;width:10px;}
 .ovwrap::-webkit-scrollbar-thumb{background:#6366f1;border-radius:6px;}
