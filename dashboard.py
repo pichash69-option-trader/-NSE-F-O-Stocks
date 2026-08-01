@@ -385,6 +385,12 @@ def extra_stats():
     })
 
 
+@st.cache_data(ttl=300)
+def vix_series():
+    """India VIX daily series (market volatility / fear gauge)."""
+    return q("SELECT date, open, high, low, close, chg_pct FROM vix ORDER BY date")
+
+
 # --------------------------------------------------------------------------- #
 # Next-day shortlist — statistical screener (educational, NOT advice)
 # --------------------------------------------------------------------------- #
@@ -834,6 +840,27 @@ elif section == "🏦 Participant":
 # =========================================================================== #
 elif section == "📊 Math stats":
     st.subheader("All F&O stocks — math stats")
+
+    # --- India VIX — market fear gauge (market-wide context) ---
+    _vix = vix_series()
+    if not _vix.empty:
+        _vl = _vix.iloc[-1]
+        vc1, vc2 = st.columns([1, 3])
+        vc1.metric("India VIX", f"{_vl['close']:.2f}",
+                   f"{_vl['chg_pct']:+.2f}%" if pd.notna(_vl['chg_pct']) else None,
+                   delta_color="inverse")          # VIX up = risk-off (red)
+        _vw = _vix.tail(60)
+        vfig = go.Figure(go.Scatter(
+            x=_vw["date"], y=_vw["close"], mode="lines",
+            line=dict(color="#f59e0b", width=2), fill="tozeroy",
+            fillcolor="rgba(245,158,11,.08)", hoverinfo="x+y", name=""))
+        vfig.update_layout(height=120, margin=dict(l=0, r=0, t=6, b=0),
+                           showlegend=False, yaxis_title=None, xaxis_title=None)
+        vfig.update_xaxes(type="category", nticks=6)
+        vc2.plotly_chart(vfig, width="stretch")
+        st.caption("**India VIX** = expected 30-day market volatility (fear gauge). "
+                   "High = fear/uncertainty · low = calm. Trend = last 60 din.")
+
     stats = q("""SELECT symbol, cum_return, cagr, ann_volatility, volatility,
                         sharpe, max_drawdown, beta, zscore, pct_rank_52w,
                         skew, kurtosis, daily_return, mean_return,

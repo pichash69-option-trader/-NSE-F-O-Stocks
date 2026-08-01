@@ -93,6 +93,12 @@ CREATE TABLE IF NOT EXISTS participant (
     PRIMARY KEY (date, metric, client_type)
 );
 CREATE INDEX IF NOT EXISTS idx_participant_date ON participant(date);
+
+-- INDIA VIX — market volatility index (daily, from NSE index-close file)
+CREATE TABLE IF NOT EXISTS vix (
+    date TEXT PRIMARY KEY,
+    open REAL, high REAL, low REAL, close REAL, chg_pct REAL
+);
 """
 
 
