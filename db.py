@@ -143,6 +143,20 @@ CREATE TABLE IF NOT EXISTS deals (
 );
 CREATE INDEX IF NOT EXISTS idx_deals_date   ON deals(date);
 CREATE INDEX IF NOT EXISTS idx_deals_symbol ON deals(symbol);
+
+-- CORPORATE ACTIONS: dividends / splits / bonus / rights / buyback (by ex-date).
+-- action_type is parsed from the free-text `subject`. Includes upcoming ex-dates.
+CREATE TABLE IF NOT EXISTS corp_actions (
+    symbol      TEXT NOT NULL,
+    ex_date     TEXT NOT NULL,
+    action_type TEXT,                  -- Dividend/Split/Bonus/Rights/Buyback/Other
+    subject     TEXT,
+    face_value  TEXT,
+    series      TEXT,
+    PRIMARY KEY (symbol, ex_date, subject)
+);
+CREATE INDEX IF NOT EXISTS idx_corp_symbol ON corp_actions(symbol);
+CREATE INDEX IF NOT EXISTS idx_corp_exdate ON corp_actions(ex_date);
 """
 
 

@@ -643,6 +643,23 @@ if section == "📈 Equity / Cash":
         else:
             st.caption("🏦 Is stock ke koi bulk/block deals record me nahi (is period me).")
 
+        # --- Corporate actions for this stock (dividend/split/bonus/rights) ---
+        ca = q("SELECT ex_date, action_type, subject FROM corp_actions "
+               "WHERE symbol=? ORDER BY ex_date DESC LIMIT 80", (symbol,))
+        if not ca.empty:
+            today_iso = pd.Timestamp.today().strftime("%Y-%m-%d")
+            upcoming = ca[ca["ex_date"] >= today_iso]
+            if not upcoming.empty:
+                st.info("📢 **Upcoming corp actions:** " + " · ".join(
+                    f"{r.ex_date} — {r.action_type}" for r in upcoming.itertuples()))
+            with st.expander(f"💼 Corporate actions — {len(ca)} "
+                             "(dividend / split / bonus / rights)"):
+                st.dataframe(ca.rename(columns={"ex_date": "Ex-date",
+                                                "action_type": "Type", "subject": "Details"}),
+                             hide_index=True, width="stretch")
+        else:
+            st.caption("💼 Is stock ke koi corporate action record me nahi (is period me).")
+
         # --- Day range (candle) chart — hover par saari details ---
         st.markdown("**Day range (candle)** — kisi bhi candle par hover karo")
         cv = view.copy()
@@ -1208,7 +1225,7 @@ elif section == "🩺 Data health":
     st.markdown("#### Tables & data quality")
     checks = []
     for t in ["prices", "futures", "participant", "stats", "vix", "indices",
-              "fii_dii", "secban", "deals"]:
+              "fii_dii", "secban", "deals", "corp_actions"]:
         n = q(f"SELECT COUNT(*) n FROM {t}")["n"].iloc[0]
         checks.append({"Table": t, "rows": int(n)})
     st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")
