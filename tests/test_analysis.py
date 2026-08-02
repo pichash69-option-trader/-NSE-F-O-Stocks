@@ -93,3 +93,19 @@ def test_equity_stats_relationships():
     # drawdown is never positive; 52w %ile within [0, 100]
     assert r["max_drawdown"] <= 0
     assert 0 <= r["pct_rank_52w"] <= 100
+
+
+def test_equity_stats_beta_from_real_index():
+    # AAA moves exactly 1.5× the index each day → beta must come out ≈ 1.5
+    dates = pd.date_range("2024-01-01", periods=40, freq="D")
+    rng = np.random.default_rng(0)
+    idx_ret = rng.normal(0, 0.01, 40)
+    index_level = 100 * np.cumprod(1 + idx_ret)
+    aaa = 100 * np.cumprod(1 + 1.5 * idx_ret)
+    prices = pd.DataFrame({
+        "symbol": ["AAA"] * 40, "date": list(dates), "close": list(aaa),
+        "volume": [1000] * 40, "deliv_pct": [50.0] * 40,
+    })
+    index_close = pd.Series(index_level, index=dates)
+    stats = analysis.equity_stats(prices, index_close=index_close)
+    assert abs(stats.loc["AAA", "beta"] - 1.5) < 0.05

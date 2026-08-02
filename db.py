@@ -99,6 +99,16 @@ CREATE TABLE IF NOT EXISTS vix (
     date TEXT PRIMARY KEY,
     open REAL, high REAL, low REAL, close REAL, chg_pct REAL
 );
+
+-- INDICES — broad + sectoral index levels (daily, from the same NSE index-close
+-- file as VIX). Used as real benchmarks: beta vs Nifty 50, sector comparison, etc.
+CREATE TABLE IF NOT EXISTS indices (
+    date TEXT NOT NULL,
+    name TEXT NOT NULL,               -- e.g. 'Nifty 50', 'Nifty Bank', 'Nifty IT'
+    open REAL, high REAL, low REAL, close REAL, chg_pct REAL,
+    PRIMARY KEY (date, name)
+);
+CREATE INDEX IF NOT EXISTS idx_indices_name ON indices(name);
 """
 
 

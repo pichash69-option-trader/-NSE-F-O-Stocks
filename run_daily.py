@@ -7,7 +7,8 @@ Steps (in order):
   2. F&O futures + options   (fetch_fno.run)
   3. Participant OI/Vol      (fetch_participant.run)
   4. India VIX               (fetch_vix.run)
-  5. Math stats              (analysis.run)
+  5. Index levels            (fetch_indices.run)
+  6. Math stats              (analysis.run)
 
 First run  = full backfill from 1-Jan-2024 to today (resume-safe, may take a while).
 Later runs = incremental — only the missing days — so it's fast.
@@ -25,6 +26,7 @@ import fetch_data
 import fetch_fno
 import fetch_participant
 import fetch_vix
+import fetch_indices
 import analysis
 from config import BASE_DIR
 
@@ -65,15 +67,16 @@ def main():
     log.info(f"run_daily START  {datetime.now():%Y-%m-%d %H:%M:%S}")
     t0 = time.time()
 
-    ok_eq = _step("1/5 Equity + delivery", fetch_data.run)
-    ok_fo = _step("2/5 F&O futures + options", fetch_fno.run)
-    ok_pt = _step("3/5 Participant OI/Vol (FII/DII/Pro/Client)", fetch_participant.run)
-    ok_vx = _step("4/5 India VIX", fetch_vix.run)
+    ok_eq = _step("1/6 Equity + delivery", fetch_data.run)
+    ok_fo = _step("2/6 F&O futures + options", fetch_fno.run)
+    ok_pt = _step("3/6 Participant OI/Vol (FII/DII/Pro/Client)", fetch_participant.run)
+    ok_vx = _step("4/6 India VIX", fetch_vix.run)
+    ok_ix = _step("5/6 Index levels (Nifty 50 / sectoral)", fetch_indices.run)
     # Stats only make sense if we have price data; run even if F&O partially failed.
-    ok_an = _step("5/5 Math stats", analysis.run)
+    ok_an = _step("6/6 Math stats", analysis.run)
 
     dur = time.time() - t0
-    ok_all = ok_eq and ok_fo and ok_pt and ok_vx and ok_an
+    ok_all = ok_eq and ok_fo and ok_pt and ok_vx and ok_ix and ok_an
     status = "OK" if ok_all else "COMPLETED WITH ERRORS"
     log.info(f"run_daily END  [{status}]  total {dur/60:.1f} min")
     log.info("=" * 60)

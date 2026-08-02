@@ -1114,7 +1114,8 @@ elif section == "🩺 Data health":
     st.subheader("Data health — kya data hai, kahan gap")
     st.caption("Data pipeline status — latest dates, gaps (pending/error), row counts, nulls.")
 
-    dsmap = {"equity": "Equity", "fno": "F&O", "participant": "Participant", "vix": "India VIX"}
+    dsmap = {"equity": "Equity", "fno": "F&O", "participant": "Participant",
+             "vix": "India VIX", "indices": "Indices"}
     cols = st.columns(len(dsmap))
     for i, (ds, label) in enumerate(dsmap.items()):
         d = q("SELECT MAX(date) d FROM ingest_log WHERE dataset=? AND status='ok'", (ds,))
@@ -1140,7 +1141,7 @@ elif section == "🩺 Data health":
 
     st.markdown("#### Tables & data quality")
     checks = []
-    for t in ["prices", "futures", "participant", "stats", "vix"]:
+    for t in ["prices", "futures", "participant", "stats", "vix", "indices"]:
         n = q(f"SELECT COUNT(*) n FROM {t}")["n"].iloc[0]
         checks.append({"Table": t, "rows": int(n)})
     st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")

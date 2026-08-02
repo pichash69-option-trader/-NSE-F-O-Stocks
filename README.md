@@ -36,7 +36,8 @@ option chain**, and **FII/DII positioning** — with pure **statistical analysis
 ## 📊 Analysis (pure math — no indicators)
 
 Returns (daily / cumulative / CAGR / mean), volatility (daily + annualized), Sharpe-type
-ratio, max drawdown, beta (vs an equal-weighted ~210-stock market proxy ≈ NIFTY),
+ratio, max drawdown, beta (vs the **real Nifty 50** index; falls back to an
+equal-weighted market proxy if index data is missing),
 z-score, 52-week percentile, skewness, kurtosis, delivery %, — and for F&O: Put-Call
 Ratio, total OI, OI change, futures premium/discount, max pain, and a strike-wise
 "sum chain". **Every formula and its meaning is documented in [`GUIDE.md`](GUIDE.md).**
@@ -110,11 +111,14 @@ holidays.py               # NSE trading-holiday calendar (holiday-aware fetching
 fetch_data.py             # equity + delivery (incremental)
 fetch_fno.py              # futures + options, all expiry/strike (incremental)
 fetch_participant.py      # FII / DII / Pro / Client OI & volume (incremental)
+fetch_vix.py              # India VIX from NSE index-close file (incremental)
+fetch_indices.py          # Nifty 50 + sectoral index levels (incremental)
+backup_db.py              # safe timestamped nse.db backup (SQLite online-backup)
 analysis.py               # pure-math stats + F&O math (+ split/bonus adjustment)
 cleanup_orphans.py        # remove exited-F&O stocks' orphaned F&O data + shrink DB
 dashboard.py              # Streamlit UI (date-wise, QuantCalc-style theme)
 .streamlit/config.toml    # premium dark theme (Outfit font, indigo/purple palette)
-run_daily.py              # fetch (equity→F&O→participant) + analyse in one command
+run_daily.py              # fetch (equity→F&O→participant→VIX→indices) + analyse in one command
 run_daily.bat             # Task Scheduler entry point (Windows)
 run_dashboard.bat         # one-click dashboard launcher (Windows)
 setup_server.sh           # Linux/AWS venv + cron setup

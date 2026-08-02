@@ -5,9 +5,9 @@ analysis.py — pure mathematical / statistical analysis (NO technical indicator
 Reads raw data from nse.db, computes per-stock stats + F&O math, writes to `stats`.
 All math is vectorized (pandas/numpy) — no per-row Python loops.
 
-Beta note: we don't store a separate NIFTY index series, so beta is computed against a
-MARKET PROXY = equal-weighted mean of the 50 stocks' daily returns. Good approximation of
-NIFTY; to use the real index later, replace `market_returns()` with the index return series.
+Beta note: beta is computed against the REAL Nifty 50 index (from the `indices`
+table). If the index series is unavailable (e.g. before the first index backfill),
+it falls back to a MARKET PROXY = equal-weighted mean of all stocks' daily returns.
 """
 import numpy as np
 import pandas as pd
@@ -29,6 +29,20 @@ def load_prices():
     finally:
         conn.close()
     return df
+
+
+def load_index(name="Nifty 50"):
+    """Daily close Series (indexed by date) for one index, or None if absent."""
+    conn = db.connect()
+    try:
+        df = pd.read_sql_query(
+            "SELECT date, close FROM indices WHERE name=? ORDER BY date",
+            conn, params=(name,), parse_dates=["date"])
+    finally:
+        conn.close()
+    if df.empty:
+        return None
+    return df.set_index("date")["close"].sort_index()
 
 
 def close_matrix(prices):
@@ -93,11 +107,18 @@ def max_drawdown(close):
     return float(dd.min())
 
 
-def equity_stats(prices):
-    """Return a DataFrame of per-symbol statistics."""
+def equity_stats(prices, index_close=None):
+    """Return a DataFrame of per-symbol statistics.
+
+    Beta uses `index_close` (real Nifty 50) when given & long enough; otherwise
+    falls back to an equal-weighted market proxy so it never breaks.
+    """
     wide = adjust_for_splits(close_matrix(prices))   # split-adjusted date × symbol
     rets = wide.pct_change()                     # daily returns
-    market = rets.mean(axis=1)                   # equal-weighted market proxy
+    if index_close is not None and index_close.reindex(wide.index).dropna().shape[0] > 30:
+        market = index_close.reindex(wide.index).pct_change()   # real Nifty 50
+    else:
+        market = rets.mean(axis=1)               # equal-weighted market proxy
 
     # Vectorized beta for every symbol at once: cov(s, m) / var(m)
     mkt_dm = market - market.mean()
@@ -249,7 +270,7 @@ def run():
         print("No price data. Run fetch_data first.")
         return
 
-    eq = equity_stats(prices)
+    eq = equity_stats(prices, index_close=load_index("Nifty 50"))
     fo = fno_stats()
     merged = eq.join(fo, how="left") if not fo.empty else eq
 
