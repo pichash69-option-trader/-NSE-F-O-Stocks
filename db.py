@@ -129,6 +129,20 @@ CREATE TABLE IF NOT EXISTS secban (
     PRIMARY KEY (date, symbol)
 );
 CREATE INDEX IF NOT EXISTS idx_secban_date ON secban(date);
+
+-- BULK & BLOCK DEALS: large disclosed trades (institutional activity signal).
+-- No PK — idempotency comes from delete-by-date-range before re-inserting a chunk.
+CREATE TABLE IF NOT EXISTS deals (
+    date      TEXT NOT NULL,
+    deal_type TEXT NOT NULL,           -- 'bulk' / 'block'
+    symbol    TEXT NOT NULL,
+    client    TEXT,
+    buy_sell  TEXT,                    -- BUY / SELL
+    qty       INTEGER,
+    price     REAL
+);
+CREATE INDEX IF NOT EXISTS idx_deals_date   ON deals(date);
+CREATE INDEX IF NOT EXISTS idx_deals_symbol ON deals(symbol);
 """
 
 

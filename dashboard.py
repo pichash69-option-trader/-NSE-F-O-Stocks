@@ -624,6 +624,25 @@ if section == "📈 Equity / Cash":
         download_csv(view, f"⬇️ Download {symbol} data (CSV)",
                      f"{symbol}_equity.csv", key="dl_equity")
 
+        # --- Bulk / block deals for this stock (institutional activity) ---
+        deals = q("SELECT date, deal_type, client, buy_sell, qty, price "
+                  "FROM deals WHERE symbol=? ORDER BY date DESC LIMIT 200", (symbol,))
+        if not deals.empty:
+            deals["Value ₹Cr"] = (deals["qty"] * deals["price"] / 1e7).round(2)
+            nbuy = int((deals["buy_sell"].str.upper() == "BUY").sum())
+            nsell = int((deals["buy_sell"].str.upper() == "SELL").sum())
+            with st.expander(f"🏦 Bulk / block deals — {len(deals)} "
+                             f"(BUY {nbuy} · SELL {nsell}) · bade disclosed trades"):
+                show = deals.rename(columns={"date": "Date", "deal_type": "Type",
+                                             "client": "Client", "buy_sell": "Side",
+                                             "qty": "Qty", "price": "Price"})
+                st.dataframe(show[["Date", "Type", "Side", "Client", "Qty", "Price", "Value ₹Cr"]],
+                             hide_index=True, width="stretch")
+                download_csv(deals, f"⬇️ {symbol} deals (CSV)",
+                             f"{symbol}_deals.csv", key="dl_deals")
+        else:
+            st.caption("🏦 Is stock ke koi bulk/block deals record me nahi (is period me).")
+
         # --- Day range (candle) chart — hover par saari details ---
         st.markdown("**Day range (candle)** — kisi bhi candle par hover karo")
         cv = view.copy()
@@ -1188,7 +1207,8 @@ elif section == "🩺 Data health":
 
     st.markdown("#### Tables & data quality")
     checks = []
-    for t in ["prices", "futures", "participant", "stats", "vix", "indices", "fii_dii", "secban"]:
+    for t in ["prices", "futures", "participant", "stats", "vix", "indices",
+              "fii_dii", "secban", "deals"]:
         n = q(f"SELECT COUNT(*) n FROM {t}")["n"].iloc[0]
         checks.append({"Table": t, "rows": int(n)})
     st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")
