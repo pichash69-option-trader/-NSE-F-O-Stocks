@@ -148,10 +148,13 @@ Sab **split/bonus-adjusted** hai (neeche note). Daily return `r = aaj ka close /
   exact nahi. FII/DII section ka data **real** hai (bas market-wide, single-stock nahi).
 
 - **Split / Bonus adjustment**: NSE ka `prev_close` split-adjust nahi hota, to split wale
-  din fake −90% jaisa move dikh sakta. Dashboard **auto-detect** karke (close ratio <0.6
-  ya >1.6) puraane prices ko adjust kar deta — candle aur returns clean rehte hain.
-  (Ticker me bhi `|move| > 30%` wale drop kiye jaate hain taaki split artifact top-movers
-  me na aaye.)
+  din fake −90% jaisa move dikh sakta. Dashboard ab **real corporate-action ratios**
+  (`corp_actions` table se — jaise 1:10 split → ×0.1, Bonus 1:1 → ×0.5) se puraane prices
+  ko **exact** adjust karta hai. Har factor tabhi lagta hai jab us din ka actual price-jump
+  usse confirm kare (±35%) — isse *NCRPS/preference bonus*, demerger-mislabel, ya galat
+  crash adjust nahi hote (genuine −40% crash ab real dikhta hai, split nahi samjha jaata).
+  Agar kisi symbol ke liye corp-action data na ho to purana heuristic (close ratio <0.6 /
+  >1.6) fallback rehta hai. (Ticker me `|move| > 30%` wale abhi bhi drop hote hain.)
 
 - **Sharpe** yahan simple `mean/std` (daily, risk-free = 0) hai — comparison ke liye, thumb-rule.
 

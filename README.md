@@ -118,7 +118,7 @@ fetch_deals.py            # bulk & block deals (institutional, monthly-chunk bac
 fetch_corp_actions.py     # dividends / splits / bonus / rights / buyback (by ex-date)
 fetch_fii_dii.py          # FII/DII cash-segment provisional flows (daily, forward-only)
 backup_db.py              # safe timestamped nse.db backup (SQLite online-backup)
-analysis.py               # pure-math stats + F&O math (+ split/bonus adjustment)
+analysis.py               # pure-math stats + F&O math (+ exact corp-action split/bonus adj.)
 cleanup_orphans.py        # remove exited-F&O stocks' orphaned F&O data + shrink DB
 dashboard.py              # Streamlit UI (date-wise, QuantCalc-style theme)
 .streamlit/config.toml    # premium dark theme (Outfit font, indigo/purple palette)

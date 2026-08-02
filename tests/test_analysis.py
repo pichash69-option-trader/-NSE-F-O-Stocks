@@ -48,6 +48,39 @@ def test_adjust_for_splits_normal_moves_unchanged():
     assert np.allclose(adj["AAA"].values, [100.0, 105.0, 103.0])
 
 
+# --- real corp-action factors (exact split/bonus adjustment) --- #
+def test_action_factor_parsing():
+    assert abs(analysis._action_factor("Bonus", "Bonus 1:1") - 0.5) < 1e-9
+    assert abs(analysis._action_factor("Bonus", "Bonus 4:1") - 0.2) < 1e-9
+    assert abs(analysis._action_factor("Split", "From Rs 10/- To Rs 2/-") - 0.2) < 1e-9
+    assert analysis._action_factor("Dividend", "Dividend Rs 5") is None
+
+
+def test_adjust_for_splits_real_bonus_exact():
+    idx = pd.date_range("2024-01-01", periods=4)
+    # 1:1 bonus on day 3 (price ~halves) while the stock genuinely rose +2%
+    wide = pd.DataFrame({"AAA": [100.0, 100.0, 51.0, 52.0]}, index=idx)
+    adj = analysis.adjust_for_splits(wide, {"AAA": {idx[2]: 0.5}})
+    assert abs(adj["AAA"].iloc[0] - 50.0) < 1e-9                 # pre-bonus ×0.5
+    assert abs(adj["AAA"].pct_change().iloc[2] - 0.02) < 1e-9    # real +2% preserved
+
+
+def test_adjust_for_splits_real_crash_untouched():
+    # a genuine −45% crash with NO corp action must stay real (old heuristic wrongly adjusted it)
+    idx = pd.date_range("2024-01-01", periods=4)
+    wide = pd.DataFrame({"AAA": [100.0, 100.0, 55.0, 54.0]}, index=idx)
+    adj = analysis.adjust_for_splits(wide, {"AAA": {}})
+    assert np.allclose(adj["AAA"].values, [100.0, 100.0, 55.0, 54.0])
+
+
+def test_adjust_for_splits_factor_mismatch_skipped():
+    # corp action claims 0.2 but price is flat (e.g. NCRPS bonus) -> factor ignored
+    idx = pd.date_range("2024-01-01", periods=4)
+    wide = pd.DataFrame({"AAA": [100.0, 100.0, 100.0, 101.0]}, index=idx)
+    adj = analysis.adjust_for_splits(wide, {"AAA": {idx[2]: 0.2}})
+    assert np.allclose(adj["AAA"].values, [100.0, 100.0, 100.0, 101.0])
+
+
 def test_adjust_ohlc_halving():
     df = pd.DataFrame({
         "date": pd.date_range("2024-01-01", periods=3),

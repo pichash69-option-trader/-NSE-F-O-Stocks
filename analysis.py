@@ -9,6 +9,8 @@ Beta note: beta is computed against the REAL Nifty 50 index (from the `indices`
 table). If the index series is unavailable (e.g. before the first index backfill),
 it falls back to a MARKET PROXY = equal-weighted mean of all stocks' daily returns.
 """
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -50,22 +52,107 @@ def close_matrix(prices):
     return prices.pivot(index="date", columns="symbol", values="close").sort_index()
 
 
-# Split/bonus threshold: a genuine one-day move for a NIFTY large-cap never exceeds
-# these; anything past them is a corporate action (split/bonus) to be back-adjusted.
+# Heuristic split/bonus thresholds — used ONLY as a fallback when no corporate-
+# action data is available. A genuine one-day move for a large-cap never exceeds
+# these, so a bigger jump is assumed to be a split/bonus.
 SPLIT_LO, SPLIT_HI = 0.6, 1.6
 
+# When real corp-action factors ARE supplied, we still guard against data gaps
+# (a split the API somehow missed) — but only for EXTREME jumps that no ordinary
+# market move produces, so genuine crashes/surges are left untouched.
+EXTREME_LO, EXTREME_HI = 0.35, 2.85
 
-def adjust_ohlc(df):
+
+def _action_factor(action_type, subject):
+    """Theoretical price-adjustment factor for a split/bonus, or None if unparseable.
+
+    Split  "From Rs 10 To Rs 2"  -> price × (2/10)   = 0.20
+    Bonus  a:b (a new per b held) -> price × b/(a+b)  (1:1 -> 0.5, 4:1 -> 0.2)
+    """
+    s = subject or ""
+    if action_type == "Bonus":
+        m = re.search(r"(\d+)\s*:\s*(\d+)", s)
+        if m:
+            a, b = int(m.group(1)), int(m.group(2))
+            if a + b > 0:
+                return b / (a + b)
+    elif action_type == "Split":
+        fm = re.search(r"From\s+R[se]\.?\s*(\d+(?:\.\d+)?)", s, re.I)
+        tm = re.search(r"To\s+R[se]\.?\s*(\d+(?:\.\d+)?)", s, re.I)
+        if fm and tm:
+            frm, to = float(fm.group(1)), float(tm.group(1))
+            if frm > 0:
+                return to / frm
+    return None
+
+
+def load_corp_factors():
+    """{symbol: {ex_date(Timestamp): factor}} for splits & bonuses, from corp_actions.
+
+    Multiple actions on the same ex-date are combined (multiplied). Used to
+    back-adjust prices with EXACT ratios instead of guessing from price jumps.
+    """
+    conn = db.connect()
+    try:
+        df = pd.read_sql_query(
+            "SELECT symbol, ex_date, action_type, subject FROM corp_actions "
+            "WHERE action_type IN ('Split','Bonus')", conn, parse_dates=["ex_date"])
+    except Exception:
+        return {}                                # table may not exist yet
+    finally:
+        conn.close()
+    out = {}
+    for r in df.itertuples():
+        f = _action_factor(r.action_type, r.subject)
+        if f and 0 < f < 1e6:
+            d = out.setdefault(r.symbol, {})
+            d[r.ex_date] = d.get(r.ex_date, 1.0) * f
+    return out
+
+
+# A corp-action factor is trusted only if the actual ex-date price jump confirms
+# it within this tolerance. Guards against actions that DON'T move the equity
+# price — e.g. "Bonus NCRPS 4:1" (preference shares), demergers mislabelled as
+# bonus, or parse errors. |raw_ratio / factor − 1| must be under this.
+FACTOR_TOL = 0.35
+
+
+def _corp_factor_series(s, cf):
+    """Per-date split/bonus factor for close series `s`, using exact corp-action
+    factors `cf` = {ex_date: factor}. A factor is applied only if the real price
+    jump that day confirms it (see FACTOR_TOL); a narrow extreme-jump fallback
+    then catches any split the corp-action feed missed."""
+    ratio = s / s.shift()
+    factor = pd.Series(1.0, index=s.index)
+    for exd, f in (cf or {}).items():
+        if exd in s.index and f:
+            rt = ratio.get(exd)
+            if pd.notna(rt) and abs(rt / f - 1) < FACTOR_TOL:
+                factor.loc[exd] = f
+    fb = ((ratio < EXTREME_LO) | (ratio > EXTREME_HI)) & (factor == 1.0)
+    factor[fb] = ratio[fb]
+    return factor
+
+
+def adjust_ohlc(df, factors=None):
     """Split/bonus-adjust a single symbol's OHLC (date-sorted) for a continuous
-    display series. Same detection as adjust_for_splits, applied to O/H/L/C so
-    the candle chart and chg% don't show a fake crash on a split day."""
+    display series, so the candle chart and chg% don't show a fake crash on a
+    split day.
+
+    `factors` = {ex_date(Timestamp): factor} for THIS symbol (from corp_actions);
+    pass {} to use exact-mode with no known actions. When None, it falls back to
+    the price-jump heuristic (SPLIT_LO/HI)."""
     df = df.sort_values("date").reset_index(drop=True)
     if len(df) < 2:
         return df
-    ratio = df["close"] / df["close"].shift()
-    factor = pd.Series(1.0, index=df.index)
-    is_action = (ratio < SPLIT_LO) | (ratio > SPLIT_HI)
-    factor[is_action] = ratio[is_action]
+    if factors is not None:
+        s = pd.Series(df["close"].values, index=pd.to_datetime(df["date"]))
+        factor = pd.Series(_corp_factor_series(s, factors).values, index=df.index)
+    else:
+        ratio = df["close"] / df["close"].shift()
+        factor = pd.Series(1.0, index=df.index)
+        is_action = (ratio < SPLIT_LO) | (ratio > SPLIT_HI)
+        factor[is_action] = ratio[is_action]
     adj_factor = factor[::-1].cumprod()[::-1] / factor      # product of factors after t
     for col in ("open", "high", "low", "close"):
         if col in df.columns:
@@ -73,23 +160,32 @@ def adjust_ohlc(df):
     return df
 
 
-def adjust_for_splits(wide):
-    """Back-adjust close prices for splits/bonuses (auto-detected from close jumps).
+def adjust_for_splits(wide, corp_factors=None):
+    """Back-adjust close prices for splits/bonuses so the series is continuous.
 
-    On a corporate-action day the close jumps by a non-market factor; we multiply all
-    EARLIER prices by that factor so the series is continuous. The action day's own
-    return then becomes ~0 (its real move is tiny vs the split) — removes the fake
-    -90%-type artifacts. Later prices are untouched, so today's price stays real.
+    On a corporate-action day the price jumps by a non-market factor; we multiply
+    all EARLIER prices by that factor. The action day's own return then reflects
+    only the real market move — removing fake -90%-type artifacts. Later prices
+    are untouched, so today's price stays real.
+
+    `corp_factors` = {symbol: {ex_date: factor}} from load_corp_factors(). When
+    provided, EXACT corp-action ratios are used (a genuine crash is no longer
+    mistaken for a split), with a narrow safety net for extreme unexplained jumps.
+    When None, it falls back to the price-jump heuristic (SPLIT_LO/HI).
     """
     adj = wide.copy()
+    use_real = corp_factors is not None
     for sym in wide.columns:
         s = wide[sym].dropna()
         if len(s) < 2:
             continue
-        ratio = s / s.shift()
-        factor = pd.Series(1.0, index=s.index)
-        is_action = (ratio < SPLIT_LO) | (ratio > SPLIT_HI)
-        factor[is_action] = ratio[is_action]
+        if use_real:
+            factor = _corp_factor_series(s, corp_factors.get(sym, {}))
+        else:
+            ratio = s / s.shift()
+            factor = pd.Series(1.0, index=s.index)
+            is_action = (ratio < SPLIT_LO) | (ratio > SPLIT_HI)
+            factor[is_action] = ratio[is_action]
         # adj_factor[t] = product of factors strictly AFTER t
         rev_cumprod = factor[::-1].cumprod()[::-1]        # product of factor[k], k>=t
         adj_factor = rev_cumprod / factor                 # exclude factor[t] itself
@@ -107,13 +203,14 @@ def max_drawdown(close):
     return float(dd.min())
 
 
-def equity_stats(prices, index_close=None):
+def equity_stats(prices, index_close=None, corp_factors=None):
     """Return a DataFrame of per-symbol statistics.
 
     Beta uses `index_close` (real Nifty 50) when given & long enough; otherwise
     falls back to an equal-weighted market proxy so it never breaks.
+    `corp_factors` (from load_corp_factors) gives exact split/bonus adjustment.
     """
-    wide = adjust_for_splits(close_matrix(prices))   # split-adjusted date × symbol
+    wide = adjust_for_splits(close_matrix(prices), corp_factors)   # split-adjusted date × symbol
     rets = wide.pct_change()                     # daily returns
     if index_close is not None and index_close.reindex(wide.index).dropna().shape[0] > 30:
         market = index_close.reindex(wide.index).pct_change()   # real Nifty 50
@@ -270,7 +367,8 @@ def run():
         print("No price data. Run fetch_data first.")
         return
 
-    eq = equity_stats(prices, index_close=load_index("Nifty 50"))
+    eq = equity_stats(prices, index_close=load_index("Nifty 50"),
+                      corp_factors=load_corp_factors())
     fo = fno_stats()
     merged = eq.join(fo, how="left") if not fo.empty else eq
 

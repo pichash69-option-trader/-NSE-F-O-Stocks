@@ -305,6 +305,13 @@ def all_symbols():
     return df["symbol"].tolist() if not df.empty else NIFTY50
 
 
+@st.cache_data(ttl=300)
+def corp_factors():
+    """Exact split/bonus adjustment factors {symbol: {ex_date: factor}} from the
+    corp_actions table — used to back-adjust prices precisely instead of guessing."""
+    return analysis.load_corp_factors()
+
+
 def stock_history(symbol):
     df = q("SELECT date,open,high,low,close,prev_close,settle,volume,turnover,"
            "num_trades,deliv_qty,deliv_pct FROM prices WHERE symbol=? ORDER BY date",
@@ -315,7 +322,7 @@ def stock_history(symbol):
     raw_first_close = float(df.loc[0, "close"])          # keep RAW before adjusting
     # Split/bonus-adjust OHLC so a split day (e.g. NESTLEIND 1:10) doesn't show a
     # fake -90% crash in the table/chart. chg% then comes from adjusted close.
-    df = analysis.adjust_ohlc(df)
+    df = analysis.adjust_ohlc(df, factors=corp_factors().get(symbol, {}))
     df["chg_pct"] = df["close"].pct_change() * 100
     # first day has no prior in-series close -> use RAW close vs RAW prev_close
     # (both raw = consistent, correct even for split stocks).
@@ -351,7 +358,7 @@ def window_returns():
     if px.empty:
         return pd.DataFrame(columns=["ret_1w", "ret_1m"])
     wide = px.pivot(index="date", columns="symbol", values="close").sort_index()
-    wide = analysis.adjust_for_splits(wide)          # split-adjusted closes
+    wide = analysis.adjust_for_splits(wide, corp_factors())   # split-adjusted closes
 
     def wret(n):
         if len(wide) <= n:
@@ -370,7 +377,8 @@ def extra_stats():
     if px.empty:
         return pd.DataFrame(columns=["ret_3m", "ret_6m", "ret_1y", "sortino", "var5"])
     wide = analysis.adjust_for_splits(
-        px.pivot(index="date", columns="symbol", values="close").sort_index())
+        px.pivot(index="date", columns="symbol", values="close").sort_index(),
+        corp_factors())
     rets = wide.pct_change()
     n = len(wide)
 
@@ -401,7 +409,8 @@ def sector_daily_returns():
     if px.empty:
         return pd.DataFrame(columns=["date", "sector", "n", "avg_ret"])
     wide = analysis.adjust_for_splits(
-        px.pivot(index="date", columns="symbol", values="close").sort_index())
+        px.pivot(index="date", columns="symbol", values="close").sort_index(),
+        corp_factors())
     rets = wide.pct_change() * 100
     long = rets.stack().reset_index()
     long.columns = ["date", "symbol", "ret"]
