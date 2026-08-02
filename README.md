@@ -113,6 +113,7 @@ fetch_fno.py              # futures + options, all expiry/strike (incremental)
 fetch_participant.py      # FII / DII / Pro / Client OI & volume (incremental)
 fetch_vix.py              # India VIX from NSE index-close file (incremental)
 fetch_indices.py          # Nifty 50 + sectoral index levels (incremental)
+fetch_fii_dii.py          # FII/DII cash-segment provisional flows (daily, forward-only)
 backup_db.py              # safe timestamped nse.db backup (SQLite online-backup)
 analysis.py               # pure-math stats + F&O math (+ split/bonus adjustment)
 cleanup_orphans.py        # remove exited-F&O stocks' orphaned F&O data + shrink DB

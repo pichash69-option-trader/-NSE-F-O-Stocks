@@ -772,6 +772,30 @@ elif section == "⛓️ Options":
 # =========================================================================== #
 elif section == "🏦 Participant":
     st.subheader("FII / DII / Pro / Client — F&O positions")
+
+    # --- FII/DII CASH-segment provisional flows (₹ crore) ---
+    cash = q("SELECT date, category, buy, sell, net FROM fii_dii ORDER BY date")
+    if not cash.empty:
+        latest = cash["date"].max()
+        today = cash[cash["date"] == latest]
+        st.markdown(f"#### 💰 FII/DII cash flows — provisional (₹ Cr) · {latest}")
+        mc = st.columns(2)
+        for i, cat in enumerate(["FII/FPI", "DII"]):
+            row = today[today["category"] == cat]
+            if not row.empty:
+                net = float(row["net"].iloc[0])
+                mc[i].metric(f"{cat} net", f"₹{net:+,.0f} Cr",
+                             delta="buying" if net >= 0 else "selling")
+        ndays = cash["date"].nunique()
+        if ndays >= 3:
+            piv = cash.pivot_table(index="date", columns="category", values="net").sort_index()
+            st.line_chart(piv.cumsum(), height=200)
+            st.caption(f"Cumulative net over {ndays} din. Positive = net buying.")
+        else:
+            st.caption("ℹ️ NSE sirf latest din publish karta hai (no archive) — ye "
+                       "aaj se aage roz accumulate hoga. History abhi ban rahi hai.")
+        st.divider()
+
     pdates = q("SELECT DISTINCT date FROM participant ORDER BY date DESC")["date"].tolist()
     if not pdates:
         st.info("Participant data abhi nahi. `python fetch_participant.py` chalao "
@@ -1115,7 +1139,7 @@ elif section == "🩺 Data health":
     st.caption("Data pipeline status — latest dates, gaps (pending/error), row counts, nulls.")
 
     dsmap = {"equity": "Equity", "fno": "F&O", "participant": "Participant",
-             "vix": "India VIX", "indices": "Indices"}
+             "vix": "India VIX", "indices": "Indices", "fiidii": "FII/DII cash"}
     cols = st.columns(len(dsmap))
     for i, (ds, label) in enumerate(dsmap.items()):
         d = q("SELECT MAX(date) d FROM ingest_log WHERE dataset=? AND status='ok'", (ds,))
@@ -1141,7 +1165,7 @@ elif section == "🩺 Data health":
 
     st.markdown("#### Tables & data quality")
     checks = []
-    for t in ["prices", "futures", "participant", "stats", "vix", "indices"]:
+    for t in ["prices", "futures", "participant", "stats", "vix", "indices", "fii_dii"]:
         n = q(f"SELECT COUNT(*) n FROM {t}")["n"].iloc[0]
         checks.append({"Table": t, "rows": int(n)})
     st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")

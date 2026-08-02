@@ -109,6 +109,16 @@ CREATE TABLE IF NOT EXISTS indices (
     PRIMARY KEY (date, name)
 );
 CREATE INDEX IF NOT EXISTS idx_indices_name ON indices(name);
+
+-- FII / DII CASH-segment provisional daily flows (₹ crore). NSE only publishes
+-- the latest day (no dated archive), so this table accumulates going forward.
+CREATE TABLE IF NOT EXISTS fii_dii (
+    date     TEXT NOT NULL,
+    category TEXT NOT NULL,            -- 'FII/FPI' or 'DII'
+    buy      REAL, sell REAL, net REAL,
+    PRIMARY KEY (date, category)
+);
+CREATE INDEX IF NOT EXISTS idx_fiidii_date ON fii_dii(date);
 """
 
 
