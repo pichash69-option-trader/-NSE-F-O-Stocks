@@ -8,8 +8,9 @@ Steps (in order):
   3. Participant OI/Vol      (fetch_participant.run)
   4. India VIX               (fetch_vix.run)
   5. Index levels            (fetch_indices.run)
-  6. FII/DII cash flows      (fetch_fii_dii.run)
-  7. Math stats              (analysis.run)
+  6. F&O securities-in-ban   (fetch_secban.run)
+  7. FII/DII cash flows      (fetch_fii_dii.run)
+  8. Math stats              (analysis.run)
 
 First run  = full backfill from 1-Jan-2024 to today (resume-safe, may take a while).
 Later runs = incremental — only the missing days — so it's fast.
@@ -28,6 +29,7 @@ import fetch_fno
 import fetch_participant
 import fetch_vix
 import fetch_indices
+import fetch_secban
 import fetch_fii_dii
 import analysis
 from config import BASE_DIR
@@ -72,14 +74,16 @@ def main():
     ok_eq = _step("1/6 Equity + delivery", fetch_data.run)
     ok_fo = _step("2/6 F&O futures + options", fetch_fno.run)
     ok_pt = _step("3/6 Participant OI/Vol (FII/DII/Pro/Client)", fetch_participant.run)
-    ok_vx = _step("4/7 India VIX", fetch_vix.run)
-    ok_ix = _step("5/7 Index levels (Nifty 50 / sectoral)", fetch_indices.run)
-    ok_fd = _step("6/7 FII/DII cash flows", fetch_fii_dii.run)
+    ok_vx = _step("4/8 India VIX", fetch_vix.run)
+    ok_ix = _step("5/8 Index levels (Nifty 50 / sectoral)", fetch_indices.run)
+    ok_sb = _step("6/8 F&O securities-in-ban", fetch_secban.run)
+    ok_fd = _step("7/8 FII/DII cash flows", fetch_fii_dii.run)
     # Stats only make sense if we have price data; run even if F&O partially failed.
-    ok_an = _step("7/7 Math stats", analysis.run)
+    ok_an = _step("8/8 Math stats", analysis.run)
 
     dur = time.time() - t0
-    ok_all = ok_eq and ok_fo and ok_pt and ok_vx and ok_ix and ok_fd and ok_an
+    ok_all = (ok_eq and ok_fo and ok_pt and ok_vx and ok_ix
+              and ok_sb and ok_fd and ok_an)
     status = "OK" if ok_all else "COMPLETED WITH ERRORS"
     log.info(f"run_daily END  [{status}]  total {dur/60:.1f} min")
     log.info("=" * 60)

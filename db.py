@@ -119,6 +119,16 @@ CREATE TABLE IF NOT EXISTS fii_dii (
     PRIMARY KEY (date, category)
 );
 CREATE INDEX IF NOT EXISTS idx_fiidii_date ON fii_dii(date);
+
+-- F&O SECURITIES-IN-BAN: symbols that crossed 95% MWPL (no fresh F&O positions
+-- allowed that day). One row per (date, symbol). A trading day with no bans is
+-- still logged 'ok' (0 rows) in ingest_log so we know it was checked.
+CREATE TABLE IF NOT EXISTS secban (
+    date   TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    PRIMARY KEY (date, symbol)
+);
+CREATE INDEX IF NOT EXISTS idx_secban_date ON secban(date);
 """
 
 

@@ -605,6 +605,19 @@ if section == "📈 Equity / Cash":
                   if pd.notna(latest['deliv_pct']) else "—")
         c4.metric("Din (range me)", f"{len(view)}")
 
+        # --- F&O ban flag (MWPL >95% = no fresh F&O positions) ---
+        bstats = q("SELECT COUNT(*) n, MAX(date) last FROM secban WHERE symbol=?", (symbol,))
+        bn = int(bstats["n"].iloc[0])
+        blast = bstats["last"].iloc[0]
+        latest_ok = q("SELECT MAX(date) d FROM ingest_log "
+                      "WHERE dataset='secban' AND status='ok'")["d"].iloc[0]
+        if blast and latest_ok and blast == latest_ok:
+            st.error(f"🚫 **{symbol} abhi F&O BAN me hai** ({blast}) — fresh F&O "
+                     "positions allowed nahi (open interest MWPL ka 95% cross).")
+        elif bn:
+            st.caption(f"🚫 F&O ban history: **{bn} din** ban me raha (aakhri: {blast}). "
+                       "Zyada ban days = high-OI/volatile risk flag.")
+
         # --- 1. Stock all-data table (glanceable, latest din upar) ---
         st.markdown("#### 1 · Stock — all data (din-b-din)")
         st.markdown(render_stock_table(view), unsafe_allow_html=True)
@@ -1139,11 +1152,21 @@ elif section == "🩺 Data health":
     st.caption("Data pipeline status — latest dates, gaps (pending/error), row counts, nulls.")
 
     dsmap = {"equity": "Equity", "fno": "F&O", "participant": "Participant",
-             "vix": "India VIX", "indices": "Indices", "fiidii": "FII/DII cash"}
+             "vix": "India VIX", "indices": "Indices", "fiidii": "FII/DII cash",
+             "secban": "F&O ban"}
     cols = st.columns(len(dsmap))
     for i, (ds, label) in enumerate(dsmap.items()):
         d = q("SELECT MAX(date) d FROM ingest_log WHERE dataset=? AND status='ok'", (ds,))
         cols[i].metric(f"{label} — latest", d["d"].iloc[0] or "—")
+
+    # Current F&O ban list (latest checked day)
+    sbday = q("SELECT MAX(date) d FROM ingest_log WHERE dataset='secban' AND status='ok'")["d"].iloc[0]
+    if sbday:
+        banned = q("SELECT symbol FROM secban WHERE date=? ORDER BY symbol", (sbday,))["symbol"].tolist()
+        if banned:
+            st.error(f"🚫 **F&O ban ({sbday})** — {len(banned)} stock: {', '.join(banned)}")
+        else:
+            st.success(f"✅ F&O ban ({sbday}) — NIL (koi stock ban me nahi).")
 
     st.markdown("#### Ingest status (per dataset)")
     st.caption("ok = data hai · holiday = market band · **pending/error = gap (agle run pe retry)**")
@@ -1165,7 +1188,7 @@ elif section == "🩺 Data health":
 
     st.markdown("#### Tables & data quality")
     checks = []
-    for t in ["prices", "futures", "participant", "stats", "vix", "indices", "fii_dii"]:
+    for t in ["prices", "futures", "participant", "stats", "vix", "indices", "fii_dii", "secban"]:
         n = q(f"SELECT COUNT(*) n FROM {t}")["n"].iloc[0]
         checks.append({"Table": t, "rows": int(n)})
     st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")
