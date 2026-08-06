@@ -29,7 +29,10 @@ except (AttributeError, ValueError):
 DB_PATH = str(DB_PATH)                    # sqlite param binding needs a str, not Path
 OUT_DIR = os.path.join(str(BASE_DIR), "database")
 PER_STOCK = ["prices", "futures", "options", "deals", "corp_actions", "secban", "stats"]
-MARKET = ["vix", "indices", "participant", "fii_dii"]
+# _market gets the truly market-wide tables PLUS the COMPLETE deals/corp_actions/
+# secban — these were fetched for the whole market, so some rows belong to symbols
+# outside the F&O folder set; keeping the full copy here means no data is lost.
+MARKET = ["vix", "indices", "participant", "fii_dii", "deals", "corp_actions", "secban"]
 
 
 def _safe(name):
