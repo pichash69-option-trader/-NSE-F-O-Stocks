@@ -11,37 +11,21 @@ Stored per (date, category): buy / sell / net in ₹ crore.
 """
 import sys
 import json
-from datetime import datetime
-
 import db
 from fetch_data import _get
+from nse_utils import iso_date, parse_float
 
 URL = "https://www.nseindia.com/api/fiidiiTradeReact"
-
-
-def _iso(dmy):
-    """'31-Jul-2026' -> '2026-07-31' (fallback: return as-is)."""
-    try:
-        return datetime.strptime(dmy, "%d-%b-%Y").strftime("%Y-%m-%d")
-    except ValueError:
-        return dmy
-
-
-def _num(s):
-    try:
-        return float(str(s).replace(",", "").strip())
-    except (ValueError, AttributeError):
-        return None
 
 
 def parse(text):
     """Yield (iso_date, category, buy, sell, net) rows."""
     for row in json.loads(text):
-        d = _iso(row.get("date", ""))
+        d = iso_date(row.get("date", ""))
         cat = (row.get("category") or "").strip()
         if not d or not cat:
             continue
-        yield d, cat, _num(row.get("buyValue")), _num(row.get("sellValue")), _num(row.get("netValue"))
+        yield d, cat, parse_float(row.get("buyValue")), parse_float(row.get("sellValue")), parse_float(row.get("netValue"))
 
 
 def run():

@@ -22,23 +22,10 @@ from datetime import date, datetime
 import db
 from config import START_DATE, REQUEST_DELAY
 from fetch_data import _get
+from nse_utils import iso_date, parse_int, month_chunks
 
 URL = ("https://www.nseindia.com/api/historicalOR/bulk-block-short-deals"
        "?optionType=short_selling&from={a}&to={b}&csv=true")
-
-
-def _iso(dmy):
-    try:
-        return datetime.strptime(dmy.strip(), "%d-%b-%Y").strftime("%Y-%m-%d")
-    except (ValueError, AttributeError):
-        return dmy.strip()
-
-
-def _int(s):
-    try:
-        return int(str(s).replace(",", "").strip())
-    except (ValueError, AttributeError):
-        return None
 
 
 def parse(text):
@@ -52,17 +39,7 @@ def parse(text):
         sym = row[1].strip()
         if not sym:
             continue
-        yield _iso(row[0]), sym, _int(row[3])
-
-
-def _month_chunks(start, end):
-    cur = date(start.year, start.month, 1)
-    while cur <= end:
-        nxt = date(cur.year + (cur.month // 12), (cur.month % 12) + 1, 1)
-        a = max(cur, start)
-        b = min(date.fromordinal(nxt.toordinal() - 1), end)
-        yield a, b
-        cur = nxt
+        yield iso_date(row[0]), sym, parse_int(row[3])
 
 
 def fetch_chunk(conn, a, b):
@@ -90,7 +67,7 @@ def run(end=None):
         else:
             start = datetime.strptime(START_DATE, "%Y-%m-%d").date()
 
-        chunks = list(_month_chunks(start, end))
+        chunks = list(month_chunks(start, end))
         print(f"Short selling: {len(chunks)} month(s) ({start} -> {end})")
         tot = 0
         for a, b in chunks:

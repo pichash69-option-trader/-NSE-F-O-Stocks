@@ -106,6 +106,7 @@ Opens at **http://localhost:8501**. (On Windows you can also double-click `run_d
 ```
 config.py                 # universe (FNO) + settings
 db.py                     # SQLite schema + helpers
+nse_utils.py              # shared fetcher helpers (date/number parsing, month chunks)
 universe.py               # derives the ~210 F&O symbols from the latest bhavcopy
 holidays.py               # NSE trading-holiday calendar (holiday-aware fetching)
 fetch_data.py             # equity + delivery (incremental)

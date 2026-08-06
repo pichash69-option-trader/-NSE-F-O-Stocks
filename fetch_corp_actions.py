@@ -20,17 +20,10 @@ from datetime import date, datetime, timedelta
 import db
 from config import START_DATE, REQUEST_DELAY
 from fetch_data import _get
+from nse_utils import iso_date, month_chunks
 
 URL = ("https://www.nseindia.com/api/corporates-corporateActions"
        "?index=equities&from_date={a}&to_date={b}")
-
-
-def _iso(dmy):
-    """'01-Feb-2024' -> '2024-02-01', or None if not a real date."""
-    try:
-        return datetime.strptime(dmy.strip(), "%d-%b-%Y").strftime("%Y-%m-%d")
-    except (ValueError, AttributeError):
-        return None
 
 
 def classify(subject):
@@ -52,22 +45,12 @@ def classify(subject):
 def parse(text):
     """Yield (symbol, ex_date, action_type, subject, face_value, series)."""
     for x in json.loads(text):
-        ex = _iso(x.get("exDate", ""))
+        ex = iso_date(x.get("exDate", ""))
         sym = (x.get("symbol") or "").strip()
         if not ex or not sym:
             continue
         subject = (x.get("subject") or "").strip()
         yield sym, ex, classify(subject), subject, x.get("faceVal"), x.get("series")
-
-
-def _month_chunks(start, end):
-    cur = date(start.year, start.month, 1)
-    while cur <= end:
-        nxt = date(cur.year + (cur.month // 12), (cur.month % 12) + 1, 1)
-        a = max(cur, start)
-        b = min(date.fromordinal(nxt.toordinal() - 1), end)
-        yield a, b
-        cur = nxt
 
 
 def fetch_chunk(conn, a, b):
@@ -101,7 +84,7 @@ def run(end=None):
         else:
             start = datetime.strptime(START_DATE, "%Y-%m-%d").date()
 
-        chunks = list(_month_chunks(start, end))
+        chunks = list(month_chunks(start, end))
         print(f"Corp actions: {len(chunks)} month(s) ({start} -> {end})")
         tot = 0
         for a, b in chunks:

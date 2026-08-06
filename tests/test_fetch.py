@@ -4,9 +4,36 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from datetime import date
+
 import fetch_secban
 import fetch_fii_dii
 import fetch_short_selling
+import nse_utils
+
+
+# --------------------------------------------------------------------------- #
+# nse_utils — shared fetcher helpers (single source of truth)
+# --------------------------------------------------------------------------- #
+def test_iso_date():
+    assert nse_utils.iso_date("01-FEB-2024") == "2024-02-01"   # upper-case month
+    assert nse_utils.iso_date("31-Jul-2026") == "2026-07-31"   # mixed case
+    assert nse_utils.iso_date("-") is None                     # invalid -> None
+    assert nse_utils.iso_date("garbage") is None
+
+
+def test_parse_int_float():
+    assert nse_utils.parse_int("2,62,628") == 262628           # Indian grouping
+    assert nse_utils.parse_int("bad") is None
+    assert nse_utils.parse_float("266.92") == 266.92
+    assert nse_utils.parse_float(None) is None
+
+
+def test_month_chunks():
+    ch = list(nse_utils.month_chunks(date(2024, 1, 1), date(2024, 3, 15)))
+    assert ch[0] == (date(2024, 1, 1), date(2024, 1, 31))
+    assert ch[1] == (date(2024, 2, 1), date(2024, 2, 29))      # leap year
+    assert ch[-1] == (date(2024, 3, 1), date(2024, 3, 15))     # clipped to end
 
 
 # --------------------------------------------------------------------------- #
