@@ -2,8 +2,14 @@
  NSE daily auto-update — Windows Task Scheduler setup
 ====================================================================
 
-Goal: roz market close ke baad (6:30 PM) run_daily.py khud chal jaye,
-naya din ka equity + F&O data laaye aur stats update kare.
+NOTE: Ye task pehle se AUTO-CREATED hai ("NSE Daily Update", roz 9:00 PM).
+Verify:  PowerShell me  Get-ScheduledTask -TaskName "NSE Daily Update"
+Ye guide sirf reference hai — agar dobara banana/badalna ho to.
+
+Goal: roz market close ke baad (9:00 PM) update_all.bat khud chal jaye —
+saare 11 datasets (equity, F&O, participant, VIX, indices, ban, FII/DII,
+deals, short-selling, corp-actions) + math stats laaye, aur per-stock
+database/ folders bhi export kare.
 
 NOTE: neeche <PROJECT> ka matlab hai wo folder jahan tumne ye project rakha hai.
       Example: C:\Users\<username>\...\nifty50-equity-fno-dashboard
@@ -18,14 +24,14 @@ STEP 2 — New task banao
 --------------------------------------------------------------------
 - Right panel → "Create Basic Task..."
 - Name:  NSE Daily Update
-- Description:  NIFTY 50 equity + F&O daily fetch + analysis
+- Description:  NSE F&O daily data fetch (11 datasets) + analysis + folder export
 - Next.
 
 --------------------------------------------------------------------
 STEP 3 — Trigger (kab chale)
 --------------------------------------------------------------------
 - "Daily" chuno → Next.
-- Start time:  6:30:00 PM   (market 3:30 close, buffer ke saath)
+- Start time:  9:00:00 PM   (market 3:30 close, buffer ke saath)
 - Recur every: 1 days → Next.
 
 --------------------------------------------------------------------
@@ -33,7 +39,7 @@ STEP 4 — Action (kya chale)
 --------------------------------------------------------------------
 - "Start a program" → Next.
 - Program/script:  (Browse karke ye file chuno)
-    <PROJECT>\run_daily.bat
+    <PROJECT>\update_all.bat
 - "Start in (optional)":
     <PROJECT>
 - Next → Finish.
@@ -59,7 +65,7 @@ STEP 6 — Test
 - Task par right-click → "Run" → dekho run_daily.log me output aata hai:
     <PROJECT>\run_daily.log
 
-Bas! Ab roz 6:30 PM ko data khud update hoga.
+Bas! Ab roz 9:00 PM ko data khud update hoga.
 Weekend/holiday par NSE file nahi hoti — script use "holiday" mark karke
 skip kar deta hai, koi error nahi.
 
@@ -69,6 +75,6 @@ NOTE — pehla run = FULL BACKFILL
 run_daily.py pehli baar chalega to 1-Jan-2024 se aaj tak ka poora data
 bharega (~40-70 min, download-bound). Isliye pehla backfill Task Scheduler
 ka wait kiye bina, ek baar manually chala lena behtar:
-    run_daily.bat  double-click  (ya)
+    update_all.bat  double-click  (ya)
     python run_daily.py
 Uske baad daily incremental fast rahega (ek din).

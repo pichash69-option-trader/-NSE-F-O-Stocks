@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-config.py — central settings for the NSE NIFTY 50 data project.
+config.py — central settings for the NSE F&O data project.
 """
 from pathlib import Path
 
@@ -49,8 +49,5 @@ NIFTY50 = [
 
 # Fast membership check
 NIFTY50_SET = set(NIFTY50)
-
-# Index symbol for beta / benchmark (F&O uses "NIFTY")
-INDEX_SYMBOL = "NIFTY 50"
 
 assert len(NIFTY50) == 50, f"Expected 50 symbols, got {len(NIFTY50)}"

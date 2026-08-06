@@ -7,7 +7,7 @@
 #
 # It sets the timezone to IST and installs cron jobs so that:
 #   - on every boot (instance Start): the dashboard starts + data updates
-#   - daily at 6:30 PM IST (if the instance is on): data updates
+#   - daily at 9:00 PM IST (if the instance is on): data updates + folder export
 # Idempotent — safe to run again; it replaces this project's cron lines.
 # ---------------------------------------------------------------------------
 set -e
@@ -22,14 +22,14 @@ if [ ! -x "$PY" ]; then
   exit 1
 fi
 
-echo "1) Timezone -> Asia/Kolkata (so 6:30 PM cron = IST market time)"
+echo "1) Timezone -> Asia/Kolkata (so 9 PM cron = IST market time)"
 sudo timedatectl set-timezone Asia/Kolkata || true
 
 echo "2) Installing cron jobs..."
 CRON_LINES=$(cat <<EOF
 @reboot cd $PROJECT_DIR && $ST run dashboard.py --server.port 8501 --server.address 0.0.0.0 >> $PROJECT_DIR/streamlit.log 2>&1
 @reboot cd $PROJECT_DIR && $PY run_daily.py >> $PROJECT_DIR/boot_update.log 2>&1
-30 18 * * * cd $PROJECT_DIR && $PY run_daily.py >> $PROJECT_DIR/cron.log 2>&1
+0 21 * * * cd $PROJECT_DIR && $PY run_daily.py >> $PROJECT_DIR/cron.log 2>&1 && $PY export_db.py >> $PROJECT_DIR/cron.log 2>&1
 EOF
 )
 
