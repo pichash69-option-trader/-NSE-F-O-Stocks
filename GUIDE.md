@@ -78,16 +78,9 @@ Saare ~210 stocks ka **computed math ek table me** — sort karke compare karo (
 Return, Sharpe, Beta, PCR, **1D/1W/1M returns**, etc.). Symbol column + header **pinned**
 rehte hain; right scroll karke saare columns dekho.
 
-### 🎯 Next-day shortlist
-Aaj ke data se **kal ke liye shortlist** — 2 opposite strategies:
-- **Momentum (continuation)** — aaj strong up + fresh long buildup → kal bhi UP.
-- **Mean-reversion (contrarian)** — aaj bahut stretched/overbought → kal ULTA (pullback).
-Har ek me **top 3 UP / 3 DOWN**, composite score se (signals: momentum + F&O positioning +
-delivery% + PCR), sirf **liquid stocks**.
-- **Backtest hit-rate** — strategy history me kitni baar sahi thi (50% = coin-flip).
-- **Date slider** — kisi bhi past din ka shortlist + **kal ka actual result ✓/✗**.
-- **⚠️ Matlab:** ye **educational/research screener** hai — guaranteed prediction ya
-  trading advice **NAHI**. Trade apne research + risk pe.
+### 📈 Index / Market
+NIFTY 50 / BANK / FINNIFTY ke charts + **India VIX** (fear gauge) + broad aur sectoral
+index table (Close + **1D/1W/1M %**). Poore market ka view — kaunsa sector chala.
 
 ---
 

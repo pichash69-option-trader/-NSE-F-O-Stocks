@@ -10,7 +10,10 @@ Sidebar navigation = 6 sections (5 data-types + 1 screener):
   3. Options            — Sensibull sum-chain + per-expiry chains (OHLC/settle inside)
   4. Participant        — FII/DII/Pro/Client sentiment (OI+Vol) + trend + flow
   5. Math stats         — all-stock statistics table (returns/vol/beta/… + 1W/1M)
-  6. Next-day shortlist — Momentum + Mean-reversion screener + backtest (educational)
+  6. Sectors            — sector-wise performance + drill-down
+  7. Index / Market     — NIFTY / sectoral indices + India VIX
+  8. Compare            — multi-stock side-by-side
+  9. Data health        — pipeline status, gaps, row counts
 """
 import os
 import json
@@ -193,10 +196,14 @@ apna chain (OHLC/Settle/Turnover chain ke andar hi). 🟧 CALLS ITM · 🟥 PUTS
 **📊 Math stats** — Saare ~210 stocks ka computed math ek table me. **Sort by** se compare
 karo (+ **1D/1W/1M returns**). Symbol + header pinned; right scroll = saare columns.
 
-**🎯 Next-day shortlist** — Aaj ke data se **kal ke liye** shortlist. 2 strategies:
-**Momentum** (continuation) + **Mean-reversion** (contrarian), har ek me top 3 UP/DOWN
-(momentum + F&O + delivery% + PCR score, liquid stocks). **Backtest hit-rate** + date
-slider (past picks ✓/✗). ⚠️ **Educational/research — trading advice nahi.**
+**🏭 Sectors** — 17 macro-sectors ka avg performance (1D/1W/1M/1Y) + drill-down.
+
+**📈 Index / Market** — NIFTY 50 / BANK / FINNIFTY charts + India VIX + broad & sectoral
+index table (1D/1W/1M change). Market-wide view.
+
+**⚖️ Compare** — 2–5 stocks side-by-side, saare metrics ek saath.
+
+**🩺 Data health** — pipeline status: latest dates, gaps, row counts, current F&O ban list.
 
 ---
 
@@ -446,101 +453,6 @@ def sector_daily_returns():
                 .agg(n=("ret", "count"), avg_ret=("ret", "mean")).reset_index())
 
 
-# --------------------------------------------------------------------------- #
-# Next-day shortlist — statistical screener (educational, NOT advice)
-# --------------------------------------------------------------------------- #
-
-
-@st.cache_data(ttl=600)
-def shortlist_data(n_liquid=40, window=60):
-    """Per (symbol,date) signals + Momentum/Mean-reversion scores for the liquid
-    universe over `window` trading days, plus next-day return (for backtesting).
-    Signals: price momentum (1D/1W) · F&O positioning (OI buildup + premium) ·
-    delivery% · options PCR. Pure statistics — no advice."""
-    alldates = q("SELECT DISTINCT date FROM prices ORDER BY date")["date"].tolist()
-    if len(alldates) < 30:
-        return pd.DataFrame()
-    win_dates = set(alldates[-window:])
-    start = alldates[-(window + 30)] if len(alldates) > window + 30 else alldates[0]
-    recent = alldates[-20]
-    liq = q("""SELECT symbol, AVG(turnover) t FROM prices WHERE date >= ?
-               GROUP BY symbol ORDER BY t DESC LIMIT ?""", (recent, n_liquid))
-    syms = liq["symbol"].tolist()
-    if not syms:
-        return pd.DataFrame()
-    ph = ",".join("?" * len(syms))
-
-    px = q(f"""SELECT symbol,date,close,prev_close,deliv_pct FROM prices
-               WHERE symbol IN ({ph}) AND date >= ? ORDER BY symbol,date""", (*syms, start))
-    frames = []
-    for _, g in px.groupby("symbol"):
-        g = g.sort_values("date").reset_index(drop=True)
-        ratio = g["close"] / g["close"].shift()
-        factor = pd.Series(1.0, index=g.index)
-        act = (ratio < 0.6) | (ratio > 1.6)
-        factor[act] = ratio[act]
-        ac = g["close"] * (factor[::-1].cumprod()[::-1] / factor)     # split-adjusted
-        g["ret_1d"] = ac.pct_change() * 100
-        g["ret_1w"] = ac.pct_change(5) * 100
-        g["ret_next"] = ac.shift(-1) / ac - 1                          # next-day (backtest)
-        frames.append(g)
-    px = pd.concat(frames, ignore_index=True)
-
-    fut = q(f"""SELECT symbol,date,expiry,close,chg_oi FROM futures
-                WHERE symbol IN ({ph}) AND date >= ?""", (*syms, start))
-    near = (fut.sort_values("expiry").groupby(["symbol", "date"]).first().reset_index()
-              .rename(columns={"close": "fut_close"})[["symbol", "date", "fut_close"]])
-    agg = fut.groupby(["symbol", "date"]).agg(chg_oi=("chg_oi", "sum")).reset_index()
-
-    opt = q(f"""SELECT symbol,date,opt_type,SUM(oi) oi FROM options
-                WHERE symbol IN ({ph}) AND date >= ? GROUP BY symbol,date,opt_type""",
-            (*syms, start))
-    pcr = opt.pivot_table(index=["symbol", "date"], columns="opt_type", values="oi").reset_index()
-    pcr["pcr"] = pcr.get("PE", 0) / pcr.get("CE", np.nan)
-    pcr = pcr[["symbol", "date", "pcr"]]
-
-    df = (px.merge(agg, on=["symbol", "date"], how="left")
-            .merge(near, on=["symbol", "date"], how="left")
-            .merge(pcr, on=["symbol", "date"], how="left"))
-    df["premium_pct"] = (df["fut_close"] - df["close"]) / df["close"] * 100
-    up, oiup = df["ret_1d"] >= 0, df["chg_oi"].fillna(0) >= 0
-    df["buildup_val"] = np.select([up & oiup, up & ~oiup, ~up & ~oiup, ~up & oiup],
-                                  [2, 1, -1, -2], default=0)
-    df["f_fno"] = df["buildup_val"] + df["premium_pct"].fillna(0)
-    df["f_deliv"] = df["deliv_pct"].fillna(0) * np.sign(df["ret_1d"])
-    df["f_stretch"] = 0.4 * df["ret_1d"] + 0.6 * df["ret_1w"]
-    df = df[df["date"].isin(win_dates)].dropna(subset=["ret_1d", "ret_1w"]).copy()
-
-    def zc(s):
-        sd = s.std(ddof=0)
-        return (s - s.mean()) / sd if sd else s * 0
-    g = df.groupby("date")
-    df["z_mom"] = g["ret_1d"].transform(zc) * 0.6 + g["ret_1w"].transform(zc) * 0.4
-    df["z_fno"] = g["f_fno"].transform(zc)
-    df["z_del"] = g["f_deliv"].transform(zc)
-    df["z_pcr"] = -g["pcr"].transform(zc)                              # low PCR = bullish
-    df["bull_mom"] = (df["z_mom"] + 0.8 * df["z_fno"].fillna(0)
-                      + 0.6 * df["z_del"].fillna(0) + 0.3 * df["z_pcr"].fillna(0))
-    df["bull_rev"] = -g["f_stretch"].transform(zc)                     # oversold → bounce
-    return df
-
-
-def shortlist_backtest(df, col, k=3):
-    """Hit-rate of top-k / bottom-k picks by `col` against actual next-day move."""
-    bt = df.dropna(subset=["ret_next"])
-    cu = cd = nu = nd = 0
-    su = sd = 0.0
-    for _, gd in bt.groupby("date"):
-        s = gd.sort_values(col, ascending=False)
-        u, dn = s.head(k), s.tail(k)
-        cu += int((u["ret_next"] > 0).sum()); nu += len(u); su += u["ret_next"].sum()
-        cd += int((dn["ret_next"] < 0).sum()); nd += len(dn); sd += dn["ret_next"].sum()
-    acc = (cu + cd) / (nu + nd) * 100 if (nu + nd) else 0
-    spread = (su / nu - sd / nd) * 100 if nu and nd else 0
-    return {"acc": acc, "up_hit": cu / nu * 100 if nu else 0,
-            "down_hit": cd / nd * 100 if nd else 0, "spread": spread,
-            "days": bt["date"].nunique()}
-
 
 @st.cache_data(ttl=300)
 def ticker_html():
@@ -576,7 +488,7 @@ def ticker_html():
 # --------------------------------------------------------------------------- #
 SECTIONS = ["📈 Equity / Cash", "🔮 Futures", "⛓️ Options", "🏦 Participant",
             "📊 Math stats", "🏭 Sectors", "📈 Index / Market", "⚖️ Compare",
-            "🎯 Next-day shortlist", "🩺 Data health"]
+            "🩺 Data health"]
 
 with st.sidebar:
     st.markdown(
@@ -1191,78 +1103,6 @@ elif section == "⚖️ Compare":
         st.markdown(render_compare(comp), unsafe_allow_html=True)
         download_csv(comp.reset_index(), "⬇️ Download compare (CSV)", "compare.csv",
                      key="dl_cmp")
-
-# =========================================================================== #
-# TAB — Next-day shortlist (statistical screener; educational, NOT advice)
-# =========================================================================== #
-elif section == "🎯 Next-day shortlist":
-    st.subheader("Next-day shortlist — kal kis pe nazar rakhein")
-    st.warning("⚠️ **Educational / research only — trading advice NAHI.** Ye aaj ke data se "
-               "banaya **statistical shortlist** hai, guaranteed prediction nahi. Next-day "
-               "move inherently uncertain hota hai. Har trade apne research + risk pe.")
-    st.caption("2 strategies (opposite): **Momentum** = aaj strong up → kal continue · "
-               "**Mean-reversion** = aaj bahut stretched → kal ulta. Signals: price momentum "
-               "(1D/1W) · F&O positioning (OI buildup + premium) · delivery% · options PCR. "
-               "Sirf liquid stocks.")
-
-    c1, c2, c3 = st.columns(3)
-    window = c1.slider("Backtest window (din)", 30, 120, 60, 10)
-    nliq = c2.slider("Liquid stocks (top by turnover)", 20, 80, 40, 10)
-    k = c3.slider("Kitne picks (up/down)", 3, 6, 3)
-
-    data = shortlist_data(nliq, window)
-    if data.empty or data["date"].nunique() < 5:
-        st.info("Itna data nahi (window ya liquid count badhao).")
-    else:
-        mom = shortlist_backtest(data, "bull_mom", k)
-        rev = shortlist_backtest(data, "bull_rev", k)
-        st.markdown(f"#### 📊 Track record — last {mom['days']} din ka backtest")
-        b1, b2 = st.columns(2)
-        b1.metric("🚀 Momentum accuracy", f"{mom['acc']:.0f}%",
-                  f"spread {mom['spread']:+.2f}%")
-        b2.metric("↩️ Mean-reversion accuracy", f"{rev['acc']:.0f}%",
-                  f"spread {rev['spread']:+.2f}%")
-        better = "Momentum" if mom["acc"] >= rev["acc"] else "Mean-reversion"
-        st.caption(f"Accuracy = shortlist ne kitni baar sahi direction pakdi (**50% = coin "
-                   f"flip**). Spread = UP − DOWN picks ka avg next-day return (edge). Is "
-                   f"window me **{better}** better chali. Guarantee nahi — sirf history.")
-
-        latest = data["date"].max()
-        dates_desc = sorted(data["date"].unique(), reverse=True)
-        sel = date_slider("📅 Kis din ka shortlist dekhna hai (pichhle din bhi)",
-                          dates_desc, "shortlist_date", window=len(dates_desc))
-        td = data[data["date"] == sel]
-        past = sel != latest
-        if past:
-            st.markdown(f"#### 🎯 {sel} ka shortlist — aur **kal (next day) actual result** ✓/✗")
-        else:
-            st.markdown(f"#### 🎯 Aaj ({sel}) ke data se — kal ke liye shortlist "
-                        "(result abhi nahi aaya)")
-        mc, rc = st.columns(2)
-        with mc:
-            st.markdown("**🚀 Momentum (continuation)**")
-            st.markdown("🟢 **UP:**")
-            st.markdown(render_picks(td.sort_values("bull_mom", ascending=False).head(k),
-                                     "bull_mom", "up", past), unsafe_allow_html=True)
-            st.markdown("🔴 **DOWN:**")
-            st.markdown(render_picks(td.sort_values("bull_mom").head(k),
-                                     "bull_mom", "down", past), unsafe_allow_html=True)
-        with rc:
-            st.markdown("**↩️ Mean-reversion (contrarian)**")
-            st.markdown("🟢 **UP** (oversold):")
-            st.markdown(render_picks(td.sort_values("bull_rev", ascending=False).head(k),
-                                     "bull_rev", "up", past), unsafe_allow_html=True)
-            st.markdown("🔴 **DOWN** (overbought):")
-            st.markdown(render_picks(td.sort_values("bull_rev").head(k),
-                                     "bull_rev", "down", past), unsafe_allow_html=True)
-        _sl = td[["symbol", "ret_1d", "ret_1w", "buildup_val", "premium_pct", "pcr",
-                  "bull_mom", "bull_rev", "ret_next"]].sort_values("bull_mom", ascending=False)
-        download_csv(_sl, f"⬇️ Download {sel} scored list (CSV)",
-                     f"shortlist_{sel}.csv", key="dl_shortlist")
-        st.caption("Columns: **1D%** (us din ka move) · **Buildup** (OI se) · **Prem%** "
-                   "(futures premium) · **PCR** · **Score** (composite). Past din pe **Kal%** "
-                   "= agle din ka actual move · **✓** = shortlist sahi, **✗** = galat. "
-                   "Slider se pichhle din scrub karke dekho strategy kaisa chala.")
 
 
 # =========================================================================== #
