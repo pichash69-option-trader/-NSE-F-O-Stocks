@@ -31,3 +31,6 @@ watchlist.json
 
 # DB backups (large, local)
 backups/
+
+# Per-stock DB export (large, local)
+database/
