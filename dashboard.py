@@ -262,7 +262,7 @@ Sab **split/bonus-adjusted**. Daily return `r = aaj close / kal close − 1`.
 - **Sharpe** yahan simple `mean/std` (daily, rf=0) — thumb-rule comparison ke liye.
 
 ## 🔄 Data update
-Har trading din market close ke baad (~**6:30 PM IST**) naya data auto-add. Weekend/holiday
+Har trading din market close ke baad (~**9 PM IST**) naya data auto-add. Weekend/holiday
 skip (late-publish par retry — koi gap nahi). Latest din upar.
 
 **Bas! Stock chuno, din chuno, explore karo.** 🚀

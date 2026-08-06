@@ -24,7 +24,7 @@ Locked-in decisions:
  (bhavcopy: equity,                      returns, vol, beta,    date-wise tables
   delivery, F&O)                         correlation, PCR...      + charts
         │                                        │                 │
-        └──────── Windows Task Scheduler daily 6:30 PM ────────────┘
+        └──────── Windows Task Scheduler daily 9:00 PM ────────────┘
 ```
 
 ### Fetch logic (incremental — ye important hai)
@@ -232,7 +232,7 @@ Secondary (math tabs, baad me): risk-return scatter, 50×50 correlation, per-sto
 - **Phase 2:** F&O fetch (futures + options, all expiry/strike) → futures/options tables
 - **Phase 3:** analysis.py — equity math stats + F&O math (PCR, sum chain, premium) → stats table
 - **Phase 4:** dashboard.py — DATE-WISE view: stock table → sum chain + 3 expiry chains → futures totals
-- **Phase 5:** run_daily.py + Task Scheduler (daily 6:30 PM auto)
+- **Phase 5:** run_daily.py + Task Scheduler (daily 9:00 PM auto)
 
 ---
 

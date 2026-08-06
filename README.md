@@ -96,8 +96,8 @@ Opens at **http://localhost:8501**. (On Windows you can also double-click `run_d
 
 ## 🔄 Daily auto-update (optional)
 
-- **Windows:** schedule `run_daily.bat` after market close (~6:30 PM IST) via **Task
-  Scheduler** — see [`task_scheduler_setup.txt`](task_scheduler_setup.txt).
+- **Windows:** the `NSE Daily Update` scheduled task runs `update_all.bat` daily at
+  ~9 PM IST — see [`task_scheduler_setup.txt`](task_scheduler_setup.txt).
 - **Linux / AWS EC2:** [`setup_server.sh`](setup_server.sh) sets up a venv + cron
   (`@reboot` + daily) so the dashboard stays live and self-updates.
 

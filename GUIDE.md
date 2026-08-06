@@ -155,7 +155,7 @@ Sab **split/bonus-adjusted** hai (neeche note). Daily return `r = aaj ka close /
 
 ## 🔄 6. Data update
 
-- Har **trading din**, market close ke baad (~**6:30 PM IST**) naya data auto-add hota hai.
+- Har **trading din**, market close ke baad (~**9 PM IST**) naya data auto-add hota hai.
 - **Weekend/holiday** skip (NSE calendar se). Late-publish hone par bhi retry hota hai —
   koi gap nahi.
 - Latest din upar dikhta hai.
