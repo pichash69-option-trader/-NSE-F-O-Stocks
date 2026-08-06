@@ -144,6 +144,16 @@ CREATE TABLE IF NOT EXISTS deals (
 CREATE INDEX IF NOT EXISTS idx_deals_date   ON deals(date);
 CREATE INDEX IF NOT EXISTS idx_deals_symbol ON deals(symbol);
 
+-- SHORT SELLING: securities-wise daily short-sold quantity (NSE disclosure).
+-- No PK — idempotency via delete-by-date-range before re-inserting a chunk.
+CREATE TABLE IF NOT EXISTS short_selling (
+    date   TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    qty    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_shortsell_date   ON short_selling(date);
+CREATE INDEX IF NOT EXISTS idx_shortsell_symbol ON short_selling(symbol);
+
 -- CORPORATE ACTIONS: dividends / splits / bonus / rights / buyback (by ex-date).
 -- action_type is parsed from the free-text `subject`. Includes upcoming ex-dates.
 CREATE TABLE IF NOT EXISTS corp_actions (

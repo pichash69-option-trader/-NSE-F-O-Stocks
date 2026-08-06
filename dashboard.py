@@ -652,6 +652,19 @@ if section == "📈 Equity / Cash":
         else:
             st.caption("🏦 Is stock ke koi bulk/block deals record me nahi (is period me).")
 
+        # --- Short selling for this stock (daily short-sold quantity) ---
+        ss = q("SELECT date, qty FROM short_selling WHERE symbol=? "
+               "ORDER BY date DESC LIMIT 200", (symbol,))
+        if not ss.empty:
+            with st.expander(f"📉 Short selling — {len(ss)} din "
+                             "(us din kitni quantity short hui)"):
+                st.dataframe(ss.rename(columns={"date": "Date", "qty": "Shorted Qty"}),
+                             hide_index=True, width="stretch")
+                download_csv(ss, f"⬇️ {symbol} short selling (CSV)",
+                             f"{symbol}_shortselling.csv", key="dl_ss")
+        else:
+            st.caption("📉 Is stock ka koi short-selling record nahi (is period me).")
+
         # --- Corporate actions for this stock (dividend/split/bonus/rights) ---
         ca = q("SELECT ex_date, action_type, subject FROM corp_actions "
                "WHERE symbol=? ORDER BY ex_date DESC LIMIT 80", (symbol,))
@@ -1234,7 +1247,7 @@ elif section == "🩺 Data health":
     st.markdown("#### Tables & data quality")
     checks = []
     for t in ["prices", "futures", "participant", "stats", "vix", "indices",
-              "fii_dii", "secban", "deals", "corp_actions"]:
+              "fii_dii", "secban", "deals", "short_selling", "corp_actions"]:
         n = q(f"SELECT COUNT(*) n FROM {t}")["n"].iloc[0]
         checks.append({"Table": t, "rows": int(n)})
     st.dataframe(pd.DataFrame(checks), hide_index=True, width="stretch")
