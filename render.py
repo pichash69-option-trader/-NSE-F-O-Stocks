@@ -12,42 +12,6 @@ _BUILDUP_LBL = {2: "Long Buildup", 1: "Short Covering",
                 -1: "Long Unwinding", -2: "Short Buildup", 0: "—"}
 
 
-def render_picks(rows, score_col, side=None, show_result=False):
-    """Compact themed table of shortlisted stocks with reasons. When show_result
-    (a past day), also shows next-day actual move + ✓/✗ (was the pick right)."""
-    if rows is None or rows.empty:
-        return "<i>—</i>"
-    r = []
-    for _, x in rows.iterrows():
-        d = x["ret_1d"]
-        dcls = "up" if d >= 0 else "dn"
-        prem = x["premium_pct"]
-        prem_s = f"{prem:+.2f}" if pd.notna(prem) else "—"
-        pcr_s = f"{x['pcr']:.2f}" if pd.notna(x["pcr"]) else "—"
-        res = ""
-        if show_result:
-            nx = x.get("ret_next")
-            if pd.notna(nx):
-                nxp = nx * 100
-                ncls = "up" if nxp >= 0 else "dn"
-                hit = (nxp > 0) if side == "up" else (nxp < 0)
-                mark = ('<span style="color:#10b981;font-weight:700">✓</span>' if hit
-                        else '<span style="color:#f43f5e;font-weight:700">✗</span>')
-                res = f'<td class="{ncls}">{nxp:+.2f}%</td><td>{mark}</td>'
-            else:
-                res = '<td>—</td><td>—</td>'
-        r.append(
-            f'<tr><td class="date" style="font-weight:600">{x["symbol"]}</td>'
-            f'<td class="{dcls}">{d:+.2f}%</td>'
-            f'<td style="font-size:11px">{_BUILDUP_LBL.get(int(x["buildup_val"]), "—")}</td>'
-            f'<td>{prem_s}</td><td>{pcr_s}</td>'
-            f'<td style="font-weight:600">{x[score_col]:+.2f}</td>{res}</tr>')
-    extra_h = '<th>Kal%</th><th>✓/✗</th>' if show_result else ''
-    return (STOCK_CSS +
-            '<div style="overflow-x:auto"><table class="stbl" style="min-width:380px">'
-            '<thead><tr><th class="l">Stock</th><th>1D%</th><th>Buildup</th>'
-            '<th>Prem%</th><th>PCR</th><th>Score</th>' + extra_h + '</tr></thead><tbody>'
-            + "".join(r) + '</tbody></table></div>')
 
 
 CHAIN_CSS = """
@@ -513,32 +477,6 @@ def render_participant_sentiment(oi, prev_oi, vol, prev_vol):
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
-def render_est_split(part, stock_oi):
-    """PROPORTIONAL ESTIMATE: split a stock's futures OI among FII/DII/Pro/Client
-    using their market-wide Future-Stock long share. NOT real per-stock data."""
-    if part is None or part.empty or not stock_oi:
-        return "<i>—</i>"
-    order = {"FII": 0, "DII": 1, "Pro": 2, "Client": 3}
-    part = part.copy()
-    part["_o"] = part["client_type"].map(order).fillna(9)
-    part = part.sort_values("_o")
-    tot = part["fut_stk_long"].sum() or 1
-    rows = []
-    for _, r in part.iterrows():
-        pct = r["fut_stk_long"] / tot * 100
-        est = pct / 100 * stock_oi
-        w = min(100, pct)
-        bar = (f'<span class="bar-bg bar-vol" style="width:{w:.0f}%"></span>'
-               f'<span class="bar-v">{pct:.1f}%</span>')
-        rows.append(
-            f'<tr><td class="date">{r["client_type"]}</td>'
-            f'<td class="bar-cell">{bar}</td>'
-            f'<td class="cl">{_fmt(est)}</td></tr>')
-    return (STOCK_CSS +
-            '<div style="overflow-x:auto"><table class="stbl" style="min-width:360px">'
-            '<thead><tr><th class="l">Participant</th>'
-            '<th>Market share (Fut Stock)</th><th>Est. contracts (is stock me)</th>'
-            '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
 # --------------------------------------------------------------------------- #

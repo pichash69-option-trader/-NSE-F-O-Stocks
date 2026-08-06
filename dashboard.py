@@ -28,8 +28,8 @@ import analysis
 import sectors
 from render import (  # presentation layer (HTML tables + CSS)
     _fmt, CHAIN_LEGEND, _participant_nets,
-    render_picks, render_chain, render_stock_table, render_overview_table,
-    render_futures_table, render_participant_sentiment, render_est_split,
+    render_chain, render_stock_table, render_overview_table,
+    render_futures_table, render_participant_sentiment,
     render_compare, render_sector_table,
 )
 from config import NIFTY50
@@ -55,12 +55,6 @@ def save_watchlist(wl):
         pass
 
 
-def download_csv(df, label, filename, key=None):
-    """Small CSV download button for a DataFrame."""
-    if df is None or df.empty:
-        return
-    st.download_button(label, df.to_csv(index=False).encode("utf-8"),
-                       file_name=filename, mime="text/csv", key=key)
 
 st.set_page_config(page_title="NSE F&O — date-wise", layout="wide")
 
@@ -263,9 +257,6 @@ Sab **split/bonus-adjusted**. Daily return `r = aaj close / kal close − 1`.
 
 ## ⚠️ Notes
 
-- **Estimated participant split**: real per-stock FII/DII data publicly nahi milta, isliye
-  market-wide % ko stock ke futures OI par **proportionally** lagaya — **rough estimate**,
-  exact nahi. (FII/DII section ka data **real** hai, bas market-wide.)
 - **Split/bonus**: NSE prev_close adjust nahi hota; dashboard auto-detect karke adjust
   karta hai (fake −90% move hataata). Ticker me `|move|>30%` drop hote hain.
 - **Sharpe** yahan simple `mean/std` (daily, rf=0) — thumb-rule comparison ke liye.
@@ -569,8 +560,6 @@ if section == "📈 Equity / Cash":
         # --- 1. Stock all-data table (glanceable, latest din upar) ---
         st.markdown("#### 1 · Stock — all data (din-b-din)")
         st.markdown(render_stock_table(view), unsafe_allow_html=True)
-        download_csv(view, f"⬇️ Download {symbol} data (CSV)",
-                     f"{symbol}_equity.csv", key="dl_equity")
 
         # --- Bulk / block deals for this stock (institutional activity) ---
         deals = q("SELECT date, deal_type, client, buy_sell, qty, price "
@@ -586,8 +575,6 @@ if section == "📈 Equity / Cash":
                                              "qty": "Qty", "price": "Price"})
                 st.dataframe(show[["Date", "Type", "Side", "Client", "Qty", "Price", "Value ₹Cr"]],
                              hide_index=True, width="stretch")
-                download_csv(deals, f"⬇️ {symbol} deals (CSV)",
-                             f"{symbol}_deals.csv", key="dl_deals")
         else:
             st.caption("🏦 Is stock ke koi bulk/block deals record me nahi (is period me).")
 
@@ -599,8 +586,6 @@ if section == "📈 Equity / Cash":
                              "(us din kitni quantity short hui)"):
                 st.dataframe(ss.rename(columns={"date": "Date", "qty": "Shorted Qty"}),
                              hide_index=True, width="stretch")
-                download_csv(ss, f"⬇️ {symbol} short selling (CSV)",
-                             f"{symbol}_shortselling.csv", key="dl_ss")
         else:
             st.caption("📉 Is stock ka koi short-selling record nahi (is period me).")
 
@@ -673,22 +658,7 @@ elif section == "🔮 Futures":
                    FROM futures WHERE symbol=? AND date=? ORDER BY expiry""",
                 (symbol, fdate))
         st.markdown(render_futures_table(fut, fspot_px), unsafe_allow_html=True)
-        download_csv(fut, f"⬇️ Download {symbol} futures (CSV)",
-                     f"{symbol}_futures_{fdate}.csv", key="dl_fut")
 
-        # --- 2. Estimated participant split (proportional estimate) ---
-        st.markdown("#### 2 · Estimated participant split")
-        st.warning("⚠️ Ye ek **PROPORTIONAL ESTIMATE** hai — maan liya ki har stock me "
-                   "market-wide jaisa hi FII/DII/Pro/Client mix hai. Real per-stock "
-                   "participant data publicly milta nahi. Rough idea ke liye, exact nahi.")
-        pmax = q("SELECT MAX(date) d FROM participant")["d"].iloc[0]
-        part = q("SELECT client_type, fut_stk_long FROM participant WHERE date=? "
-                 "AND metric='oi' AND client_type IN ('FII','DII','Pro','Client')", (pmax,))
-        soi = q("SELECT SUM(oi) oi FROM futures WHERE symbol=? AND date=?", (symbol, fdate))
-        stock_oi = float(soi["oi"].iloc[0]) if not soi.empty and pd.notna(soi["oi"].iloc[0]) else 0
-        st.markdown(f"**{symbol}** — futures OI = **{_fmt(stock_oi)}** contracts. "
-                    "Estimated split (market-wide Future-Stock % se):")
-        st.markdown(render_est_split(part, stock_oi), unsafe_allow_html=True)
 
 # =========================================================================== #
 # TAB — Option chain (Sensibull style)
@@ -720,8 +690,6 @@ elif section == "⛓️ Options":
                               volume, value_lakh, oi, chg_oi FROM options
                        WHERE symbol=? AND date=? ORDER BY expiry, strike, opt_type""",
                     (symbol, odate))
-        download_csv(_optraw, f"⬇️ Download full option chain (CSV) — {odate}",
-                     f"{symbol}_options_{odate}.csv", key="dl_opt")
         st.markdown(CHAIN_LEGEND, unsafe_allow_html=True)
 
         # SUM CHAIN (upar) — Sensibull style
@@ -886,8 +854,6 @@ elif section == "🏦 Participant":
                     "total_long,total_short FROM participant WHERE date=? "
                     "ORDER BY metric,client_type", (pdate,))
             st.dataframe(raw, width="stretch", hide_index=True)
-            download_csv(raw, "⬇️ Download participant data (CSV)",
-                         f"participant_{pdate}.csv", key="dl_part")
 
 # =========================================================================== #
 # TAB — overview (all-stock math stats)
@@ -931,8 +897,6 @@ elif section == "📊 Math stats":
         col, asc = sort_opts[choice]
         stats = stats.sort_values(col, ascending=asc, na_position="last")
         st.markdown(render_overview_table(stats), unsafe_allow_html=True)
-        download_csv(stats, "⬇️ Download math stats (CSV)", "nse_math_stats.csv",
-                     key="dl_stats")
         st.caption("Green = up / positive, red = down / negative · **1D/1W/1M/3M/6M/1Y%** "
                    "= momentum across timeframes · **Sortino** = downside-adjusted return · "
                    "**Calmar** = CAGR ÷ max-drawdown · **VaR%** = 5% worst-day loss · bars = "
@@ -982,7 +946,6 @@ elif section == "🏭 Sectors":
 
         st.markdown("#### 📋 Trailing performance (as of latest — avg 1D/1W/1M/1Y)")
         st.markdown(render_sector_table(agg), unsafe_allow_html=True)
-        download_csv(agg, "⬇️ Download sector summary (CSV)", "sectors.csv", key="dl_sec")
 
         # drill-down — stocks in a sector
         st.markdown("#### 🔎 Sector drill-down")
@@ -1054,7 +1017,6 @@ elif section == "📈 Index / Market":
         sec_snap = sec_snap.sort_values("1D %", ascending=False)
     st.dataframe(sec_snap, hide_index=True, width="stretch")
     st.caption("1D se sorted — aaj ka sector rotation. Green = up. NSE index data (roz update).")
-    download_csv(sec_snap, "⬇️ Sectoral indices (CSV)", "sectoral_indices.csv", key="dl_ix")
 
 # =========================================================================== #
 # TAB — Compare (multi-stock side-by-side)
@@ -1101,8 +1063,6 @@ elif section == "⚖️ Compare":
                     .set_index("symbol").reindex(picks))
         st.markdown("#### 📊 Side-by-side stats")
         st.markdown(render_compare(comp), unsafe_allow_html=True)
-        download_csv(comp.reset_index(), "⬇️ Download compare (CSV)", "compare.csv",
-                     key="dl_cmp")
 
 
 # =========================================================================== #

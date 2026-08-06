@@ -64,17 +64,3 @@ def test_senti_labels():
     assert render._senti(0.08)[0] == "Mild Bullish"
     assert render._senti(0.0)[1] == "neu"          # indecisive
     assert render._senti(-0.5)[0] == "Strong Bearish"
-
-
-def test_render_picks_result_columns():
-    rows = pd.DataFrame([{
-        "symbol": "AAA", "ret_1d": 3.0, "premium_pct": 0.5, "pcr": 0.8,
-        "buildup_val": 2, "bull_mom": 2.1, "ret_next": 0.015,
-    }])
-    # past day (show_result) → Kal% + ✓ columns; UP pick that rose → hit (✓)
-    html = render.render_picks(rows, "bull_mom", side="up", show_result=True)
-    assert "Kal%" in html and "AAA" in html
-    assert "✓" in html
-    # latest day (no result) → no Kal% column
-    html2 = render.render_picks(rows, "bull_mom", side="up", show_result=False)
-    assert "Kal%" not in html2
