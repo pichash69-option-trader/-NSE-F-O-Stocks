@@ -27,6 +27,7 @@ option chain**, and **FII/DII positioning** — with pure **statistical analysis
 | ⛓️ **Options** | Sensibull-style — ITM shading, OI bars, ATM highlight, PCR, max pain; a combined "sum chain" across expiries + each expiry's own chain with OHLC/settle/turnover inside |
 | 🏦 **Participant** | FII / DII / Pro / Client **sentiment** (OI + Volume, Bearish‹—›Bullish bars per segment) + net trend + cumulative-flow charts |
 | 📊 **Math stats** | All ~210 stocks' statistics in one sortable table (18 metrics + 1W/1M returns), sticky header + symbol |
+| 📈 **Index / Market** | NIFTY 50 / BANK / FINNIFTY charts + India VIX + broad & sectoral index table (1D/1W/1M change) — market-wide view |
 | 🎯 **Next-day shortlist** | Statistical screener — Momentum + Mean-reversion top-3 up/down for next day, with backtest hit-rate + date slider (past picks ✓/✗). *Educational only* |
 
 - **Auto-updating** — one command backfills from 1-Jan-2024 to today, then daily incremental.

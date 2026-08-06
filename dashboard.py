@@ -401,6 +401,43 @@ def vix_series():
     return q("SELECT date, open, high, low, close, chg_pct FROM vix ORDER BY date")
 
 
+# Curated index lists for the Index / Market view (all verified present in DB).
+BROAD_IX = ("Nifty 50", "Nifty Next 50", "Nifty 500", "Nifty Midcap Select",
+            "Nifty Bank", "Nifty Financial Services")
+SECTORAL_IX = ("Nifty Auto", "Nifty IT", "Nifty Pharma", "Nifty FMCG", "Nifty Metal",
+               "Nifty Realty", "Nifty Energy", "Nifty PSU Bank", "Nifty Private Bank",
+               "Nifty Media", "Nifty Consumer Durables", "Nifty Oil & Gas",
+               "Nifty Healthcare Index", "Nifty Infrastructure", "Nifty Commodities")
+
+
+@st.cache_data(ttl=300)
+def index_series(name):
+    """Daily close + chg% for one index."""
+    return q("SELECT date, close, chg_pct FROM indices WHERE name=? ORDER BY date", (name,))
+
+
+@st.cache_data(ttl=300)
+def index_snapshot(names):
+    """Latest close + 1D/1W/1M % change for a set of indices (rows in input order)."""
+    ph = ",".join("?" * len(names))
+    df = q(f"SELECT date, name, close FROM indices WHERE name IN ({ph}) ORDER BY date",
+           tuple(names))
+    if df.empty:
+        return pd.DataFrame(columns=["Index", "Close", "1D %", "1W %", "1M %"])
+    wide = df.pivot(index="date", columns="name", values="close").sort_index()
+
+    def chg(k):
+        if len(wide) <= k:
+            return pd.Series(index=wide.columns, dtype=float)
+        return (wide.iloc[-1] / wide.iloc[-1 - k] - 1) * 100
+
+    out = pd.DataFrame({"Close": wide.iloc[-1].round(1), "1D %": chg(1).round(2),
+                        "1W %": chg(5).round(2), "1M %": chg(20).round(2)})
+    out = out.reindex([n for n in names if n in out.index])
+    out.index.name = "Index"
+    return out.reset_index()
+
+
 @st.cache_data(ttl=300)
 def sector_daily_returns():
     """Per (date, sector) average 1-day return % — split-adjusted. Long frame:
@@ -548,8 +585,8 @@ def ticker_html():
 # Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
 SECTIONS = ["📈 Equity / Cash", "🔮 Futures", "⛓️ Options", "🏦 Participant",
-            "📊 Math stats", "🏭 Sectors", "⚖️ Compare", "🎯 Next-day shortlist",
-            "🩺 Data health"]
+            "📊 Math stats", "🏭 Sectors", "📈 Index / Market", "⚖️ Compare",
+            "🎯 Next-day shortlist", "🩺 Data health"]
 
 with st.sidebar:
     st.markdown(
@@ -1079,6 +1116,65 @@ elif section == "🏭 Sectors":
                 .sort_values("1M%", ascending=False).round(2))
         st.caption(f"**{sec}** — {len(show)} stocks (1M return se sorted)")
         st.dataframe(show, width="stretch", hide_index=True)
+
+# =========================================================================== #
+# TAB — Index / Market (NIFTY + sectoral indices, VIX)
+# =========================================================================== #
+elif section == "📈 Index / Market":
+    st.subheader("Index / Market — NIFTY & sectoral indices")
+    st.caption("Poore market ka view — jo index data (NIFTY / BANK / sectoral) roz "
+               "aata hai. Charts last 60 trading din ke.")
+
+    # --- headline index charts ---
+    headline = ["Nifty 50", "Nifty Bank", "Nifty Financial Services"]
+    hcols = st.columns(3)
+    for hc, nm in zip(hcols, headline):
+        s = index_series(nm)
+        if s.empty:
+            continue
+        last = s.iloc[-1]
+        hc.metric(nm, f"{last['close']:,.1f}",
+                  f"{last['chg_pct']:+.2f}%" if pd.notna(last["chg_pct"]) else None)
+        w = s.tail(60)
+        up = w["close"].iloc[-1] >= w["close"].iloc[0]
+        col = "#10b981" if up else "#f43f5e"
+        fig = go.Figure(go.Scatter(
+            x=w["date"], y=w["close"], mode="lines",
+            line=dict(color=col, width=2), fill="tozeroy",
+            fillcolor=("rgba(16,185,129,.08)" if up else "rgba(244,63,94,.08)"),
+            hoverinfo="x+y", name=""))
+        fig.update_layout(height=140, margin=dict(l=0, r=0, t=6, b=0), showlegend=False)
+        fig.update_xaxes(type="category", nticks=4, showticklabels=False)
+        hc.plotly_chart(fig, width="stretch", key=f"ixchart_{nm}")
+
+    # --- India VIX ---
+    _vix = vix_series()
+    if not _vix.empty:
+        vl = _vix.iloc[-1]
+        st.markdown(f"#### India VIX — {vl['close']:.2f} "
+                    f"({vl['chg_pct']:+.2f}%)" if pd.notna(vl["chg_pct"]) else "#### India VIX")
+        vw = _vix.tail(60)
+        vfig = go.Figure(go.Scatter(
+            x=vw["date"], y=vw["close"], mode="lines",
+            line=dict(color="#f59e0b", width=2), fill="tozeroy",
+            fillcolor="rgba(245,158,11,.08)", hoverinfo="x+y", name=""))
+        vfig.update_layout(height=130, margin=dict(l=0, r=0, t=6, b=0), showlegend=False)
+        vfig.update_xaxes(type="category", nticks=6)
+        st.plotly_chart(vfig, width="stretch", key="ixchart_vix")
+        st.caption("**India VIX** = expected 30-day volatility (fear gauge). "
+                   "High = fear/uncertainty · low = calm.")
+
+    # --- broad + sectoral snapshot tables ---
+    st.markdown("#### Broad indices")
+    st.dataframe(index_snapshot(BROAD_IX), hide_index=True, width="stretch")
+
+    st.markdown("#### Sectoral indices — kaunsa sector chala (1D / 1W / 1M %)")
+    sec_snap = index_snapshot(SECTORAL_IX)
+    if not sec_snap.empty:
+        sec_snap = sec_snap.sort_values("1D %", ascending=False)
+    st.dataframe(sec_snap, hide_index=True, width="stretch")
+    st.caption("1D se sorted — aaj ka sector rotation. Green = up. NSE index data (roz update).")
+    download_csv(sec_snap, "⬇️ Sectoral indices (CSV)", "sectoral_indices.csv", key="dl_ix")
 
 # =========================================================================== #
 # TAB — Compare (multi-stock side-by-side)
