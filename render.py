@@ -8,10 +8,6 @@ import numpy as np
 import pandas as pd
 
 
-_BUILDUP_LBL = {2: "Long Buildup", 1: "Short Covering",
-                -1: "Long Unwinding", -2: "Short Buildup", 0: "—"}
-
-
 
 
 CHAIN_CSS = """

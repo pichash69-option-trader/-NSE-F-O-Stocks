@@ -13,7 +13,7 @@ import sys
 import time
 import csv
 import zipfile
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import db
 import holidays

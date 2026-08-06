@@ -179,19 +179,6 @@ def init_db():
         conn.close()
 
 
-def last_ingested_date(dataset):
-    """Most recent date we recorded for a dataset ('equity'/'fno'), or None."""
-    conn = connect()
-    try:
-        row = conn.execute(
-            "SELECT MAX(date) FROM ingest_log WHERE dataset=? AND status IN ('ok','holiday')",
-            (dataset,),
-        ).fetchone()
-        return row[0] if row and row[0] else None
-    finally:
-        conn.close()
-
-
 def done_dates(dataset):
     """Set of dates already completed ('ok' data or a real 'holiday').
 

@@ -14,7 +14,7 @@ import io
 import sys
 import csv
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 import db
 import holidays
