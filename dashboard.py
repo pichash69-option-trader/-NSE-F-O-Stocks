@@ -351,34 +351,26 @@ def participant_net_series():
 
 
 @st.cache_data(ttl=300)
-def window_returns():
-    """1-week (5 trading-day) and 1-month (20 trading-day) return % per stock,
-    split/bonus-adjusted. Index = symbol."""
+def adjusted_closes():
+    """Split/bonus-adjusted daily close matrix (date × symbol), all stocks.
+    Shared base for every return / volatility computation (computed once)."""
     px = q("SELECT symbol, date, close FROM prices")
     if px.empty:
-        return pd.DataFrame(columns=["ret_1w", "ret_1m"])
-    wide = px.pivot(index="date", columns="symbol", values="close").sort_index()
-    wide = analysis.adjust_for_splits(wide, corp_factors())   # split-adjusted closes
-
-    def wret(n):
-        if len(wide) <= n:
-            return pd.Series(index=wide.columns, dtype=float)
-        return (wide.iloc[-1] / wide.iloc[-1 - n] - 1) * 100
-
-    return pd.DataFrame({"ret_1w": wret(5), "ret_1m": wret(20)})
+        return pd.DataFrame()
+    return analysis.adjust_for_splits(
+        px.pivot(index="date", columns="symbol", values="close").sort_index(),
+        corp_factors())
 
 
 @st.cache_data(ttl=300)
-def extra_stats():
-    """Longer-window returns (3M/6M/1Y) + downside risk (Sortino, 5% VaR) per
-    stock, from split-adjusted daily closes. Index = symbol. (Calmar is derived
-    in the Math-stats view from cagr / |max_drawdown|.)"""
-    px = q("SELECT symbol, date, close FROM prices")
-    if px.empty:
-        return pd.DataFrame(columns=["ret_3m", "ret_6m", "ret_1y", "sortino", "var5"])
-    wide = analysis.adjust_for_splits(
-        px.pivot(index="date", columns="symbol", values="close").sort_index(),
-        corp_factors())
+def return_windows():
+    """Per-stock return % over 1W/1M/3M/6M/1Y + Sortino + 5% VaR, from the
+    split-adjusted close matrix. Index = symbol. (Calmar is derived in the
+    Math-stats view from cagr / |max_drawdown|.)"""
+    cols = ["ret_1w", "ret_1m", "ret_3m", "ret_6m", "ret_1y", "sortino", "var5"]
+    wide = adjusted_closes()
+    if wide.empty:
+        return pd.DataFrame(columns=cols)
     rets = wide.pct_change()
     n = len(wide)
 
@@ -389,7 +381,8 @@ def extra_stats():
 
     downside = rets[rets < 0].std()                       # std of negative days only
     return pd.DataFrame({
-        "ret_3m": wret(63), "ret_6m": wret(126), "ret_1y": wret(252),
+        "ret_1w": wret(5), "ret_1m": wret(20), "ret_3m": wret(63),
+        "ret_6m": wret(126), "ret_1y": wret(252),
         "sortino": rets.mean() / downside,                # mean / downside deviation
         "var5": -rets.quantile(0.05) * 100,               # 5% historical VaR (loss %)
     })
@@ -442,12 +435,9 @@ def index_snapshot(names):
 def sector_daily_returns():
     """Per (date, sector) average 1-day return % — split-adjusted. Long frame:
     columns date, sector, n, avg_ret. Powers the day-by-day sector view."""
-    px = q("SELECT symbol, date, close FROM prices")
-    if px.empty:
+    wide = adjusted_closes()
+    if wide.empty:
         return pd.DataFrame(columns=["date", "sector", "n", "avg_ret"])
-    wide = analysis.adjust_for_splits(
-        px.pivot(index="date", columns="symbol", values="close").sort_index(),
-        corp_factors())
     rets = wide.pct_change() * 100
     long = rets.stack().reset_index()
     long.columns = ["date", "symbol", "ret"]
@@ -992,26 +982,7 @@ elif section == "🏦 Participant":
 # =========================================================================== #
 elif section == "📊 Math stats":
     st.subheader("All F&O stocks — math stats")
-
-    # --- India VIX — market fear gauge (market-wide context) ---
-    _vix = vix_series()
-    if not _vix.empty:
-        _vl = _vix.iloc[-1]
-        vc1, vc2 = st.columns([1, 3])
-        vc1.metric("India VIX", f"{_vl['close']:.2f}",
-                   f"{_vl['chg_pct']:+.2f}%" if pd.notna(_vl['chg_pct']) else None,
-                   delta_color="inverse")          # VIX up = risk-off (red)
-        _vw = _vix.tail(60)
-        vfig = go.Figure(go.Scatter(
-            x=_vw["date"], y=_vw["close"], mode="lines",
-            line=dict(color="#f59e0b", width=2), fill="tozeroy",
-            fillcolor="rgba(245,158,11,.08)", hoverinfo="x+y", name=""))
-        vfig.update_layout(height=120, margin=dict(l=0, r=0, t=6, b=0),
-                           showlegend=False, yaxis_title=None, xaxis_title=None)
-        vfig.update_xaxes(type="category", nticks=6)
-        vc2.plotly_chart(vfig, width="stretch")
-        st.caption("**India VIX** = expected 30-day market volatility (fear gauge). "
-                   "High = fear/uncertainty · low = calm. Trend = last 60 din.")
+    st.caption("Market-wide **India VIX** aur indices ab **📈 Index / Market** section me hain.")
 
     stats = q("""SELECT symbol, cum_return, cagr, ann_volatility, volatility,
                         sharpe, max_drawdown, beta, zscore, pct_rank_52w,
@@ -1023,8 +994,7 @@ elif section == "📊 Math stats":
     else:
         # Add-ons: multi-window returns (1W/1M/3M/6M/1Y) + downside risk
         # (Sortino/VaR) + Calmar (= CAGR / |max drawdown|).
-        stats = (stats.merge(window_returns(), left_on="symbol", right_index=True, how="left")
-                      .merge(extra_stats(), left_on="symbol", right_index=True, how="left"))
+        stats = stats.merge(return_windows(), left_on="symbol", right_index=True, how="left")
         stats["calmar"] = stats["cagr"] / stats["max_drawdown"].abs().replace(0, np.nan)
         sort_opts = {
             "1-day return (zyada → kam)": ("daily_return", False),
@@ -1087,9 +1057,7 @@ elif section == "🏭 Sectors":
     if base.empty:
         st.info("Stats abhi nahi. `python analysis.py` chalao.")
     else:
-        df = (base.merge(window_returns().reset_index(), on="symbol", how="left")
-                  .merge(extra_stats().reset_index()[["symbol", "ret_1y"]],
-                         on="symbol", how="left"))
+        df = base.merge(return_windows().reset_index(), on="symbol", how="left")
         df["ret_1d"] = df["daily_return"] * 100
         df["ann_vol"] = df["ann_volatility"] * 100
         df["sector"] = df["symbol"].map(sectors.sector_of)
@@ -1217,8 +1185,7 @@ elif section == "⚖️ Compare":
         cl = q(f"SELECT symbol, close FROM prices WHERE date=(SELECT MAX(date) FROM prices) "
                f"AND symbol IN ({ph})", tuple(picks))
         comp = (comp.merge(cl, on="symbol", how="left")
-                    .merge(window_returns().reset_index(), on="symbol", how="left")
-                    .merge(extra_stats().reset_index(), on="symbol", how="left")
+                    .merge(return_windows().reset_index(), on="symbol", how="left")
                     .set_index("symbol").reindex(picks))
         st.markdown("#### 📊 Side-by-side stats")
         st.markdown(render_compare(comp), unsafe_allow_html=True)
