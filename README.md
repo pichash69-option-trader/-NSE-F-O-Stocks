@@ -28,7 +28,7 @@ option chain**, and **FII/DII positioning** — with pure **statistical analysis
 | 🏦 **Participant** | FII / DII / Pro / Client **sentiment** (OI + Volume, Bearish‹—›Bullish bars per segment) + net trend + cumulative-flow charts |
 | 🔬 **Analysis** | One stock, **day-by-day** (date slider): price / delivery / F&O buildup / premium% / PCR change vs previous day — each with a **plain-language "matlab"** + that day's events (deals, ban, corp-action). *Educational interpretation, not advice* |
 | 📊 **Math stats** | All ~210 stocks' statistics in one sortable table (24 metrics + 1W/1M returns), sticky header + symbol |
-| 📈 **Index / Market** | NIFTY 50 / BANK / FINNIFTY charts + India VIX + broad & sectoral index table (1D/1W/1M change) — market-wide view |
+| 🌐 **Market** | NIFTY 50 / BANK / FINNIFTY charts + India VIX + broad & sectoral index table (official) **and** our F&O stocks' sector performance (avg 1D/1W/1M/1Y) + drill-down + day-by-day scrub |
 
 - **Auto-updating** — one command backfills from 1-Jan-2024 to today, then daily incremental.
 - **Holiday-aware fetching** — uses the NSE trading calendar, retries late-published data,

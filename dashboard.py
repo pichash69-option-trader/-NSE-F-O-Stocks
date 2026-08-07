@@ -10,10 +10,9 @@ Sidebar navigation = 6 sections (5 data-types + 1 screener):
   3. Options            — Sensibull sum-chain + per-expiry chains (OHLC/settle inside)
   4. Participant        — FII/DII/Pro/Client sentiment (OI+Vol) + trend + flow
   5. Math stats         — all-stock statistics table (returns/vol/beta/… + 1W/1M)
-  6. Sectors            — sector-wise performance + drill-down
-  7. Index / Market     — NIFTY / sectoral indices + India VIX
-  8. Compare            — multi-stock side-by-side
-  9. Data health        — pipeline status, gaps, row counts
+  6. Market             — NIFTY / sectoral indices + VIX + our-stocks sector performance
+  7. Compare            — multi-stock side-by-side
+  8. Data health        — pipeline status, gaps, row counts
 """
 import os
 import json
@@ -189,10 +188,9 @@ apna chain (OHLC/Settle/Turnover chain ke andar hi). 🟧 CALLS ITM · 🟥 PUTS
 **📊 Math stats** — Saare ~210 stocks ka computed math ek table me. **Sort by** se compare
 karo (+ **1D/1W/1M returns**). Symbol + header pinned; right scroll = saare columns.
 
-**🏭 Sectors** — 17 macro-sectors ka avg performance (1D/1W/1M/1Y) + drill-down.
-
-**📈 Index / Market** — NIFTY 50 / BANK / FINNIFTY charts + India VIX + broad & sectoral
-index table (1D/1W/1M change). Market-wide view.
+**🌐 Market** — NIFTY 50 / BANK / FINNIFTY charts + India VIX + broad & sectoral index
+table (official, 1D/1W/1M) + humare F&O stocks ka **sector performance** (avg 1D/1W/1M/1Y)
++ drill-down + day-by-day sector scrub.
 
 **⚖️ Compare** — 2–5 stocks side-by-side, saare metrics ek saath.
 
@@ -392,7 +390,7 @@ def vix_series():
     return q("SELECT date, open, high, low, close, chg_pct FROM vix ORDER BY date")
 
 
-# Curated index lists for the Index / Market view (all verified present in DB).
+# Curated index lists for the Market tab (all verified present in DB).
 BROAD_IX = ("Nifty 50", "Nifty Next 50", "Nifty 500", "Nifty Midcap Select",
             "Nifty Bank", "Nifty Financial Services")
 SECTORAL_IX = ("Nifty Auto", "Nifty IT", "Nifty Pharma", "Nifty FMCG", "Nifty Metal",
@@ -666,8 +664,8 @@ def _trend5(dd, key, sel, n=5):
 # Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
 SECTIONS = ["📈 Equity / Cash", "🔬 Analysis", "🔮 Futures", "⛓️ Options",
-            "🏦 Participant", "📊 Math stats", "🏭 Sectors", "📈 Index / Market",
-            "⚖️ Compare", "🩺 Data health"]
+            "🏦 Participant", "📊 Math stats", "🌐 Market", "⚖️ Compare",
+            "🩺 Data health"]
 
 with st.sidebar:
     st.markdown(
@@ -1379,7 +1377,7 @@ elif section == "🏦 Participant":
 # =========================================================================== #
 elif section == "📊 Math stats":
     st.subheader("All F&O stocks — math stats")
-    st.caption("Market-wide **India VIX** aur indices ab **📈 Index / Market** section me hain.")
+    st.caption("Market-wide **India VIX** aur indices ab **🌐 Market** section me hain.")
 
     stats = q("""SELECT symbol, cum_return, cagr, ann_volatility, volatility,
                         sharpe, max_drawdown, beta, correlation, avg_deliv_pct,
@@ -1426,68 +1424,10 @@ elif section == "📊 Math stats":
                    "volatility & 52-week position. Split/bonus-adjusted. Right scroll = saare columns.")
 
 # =========================================================================== #
-# TAB — Sectors (sector-wise performance)
+# TAB — Market (NIFTY / sectoral indices + VIX + our-stocks sector performance)
 # =========================================================================== #
-elif section == "🏭 Sectors":
-    st.subheader("Sector-wise performance")
-
-    base = q("SELECT symbol, ann_volatility, put_call_ratio, daily_return FROM stats")
-    if base.empty:
-        st.info("Stats abhi nahi. `python analysis.py` chalao.")
-    else:
-        df = base.merge(return_windows().reset_index(), on="symbol", how="left")
-        df["ret_1d"] = df["daily_return"] * 100
-        df["ann_vol"] = df["ann_volatility"] * 100
-        df["sector"] = df["symbol"].map(sectors.sector_of)
-        agg = (df.groupby("sector").agg(
-                   n=("symbol", "count"), ret_1d=("ret_1d", "mean"),
-                   ret_1w=("ret_1w", "mean"), ret_1m=("ret_1m", "mean"),
-                   ret_1y=("ret_1y", "mean"), ann_vol=("ann_vol", "mean"),
-                   pcr=("put_call_ratio", "mean")).reset_index()
-                 .sort_values("ret_1m", ascending=False))
-
-        st.markdown("#### 📋 Trailing performance (as of latest — avg 1D/1W/1M/1Y)")
-        st.markdown(render_sector_table(agg), unsafe_allow_html=True)
-
-        # drill-down — stocks in a sector
-        st.markdown("#### 🔎 Sector drill-down")
-        sec = st.selectbox("Sector chuno", agg["sector"].tolist())
-        show = (df[df["sector"] == sec]
-                [["symbol", "ret_1d", "ret_1w", "ret_1m", "ret_1y", "ann_vol",
-                  "put_call_ratio"]]
-                .rename(columns={"ret_1d": "1D%", "ret_1w": "1W%", "ret_1m": "1M%",
-                                 "ret_1y": "1Y%", "ann_vol": "Ann Vol%",
-                                 "put_call_ratio": "PCR"})
-                .sort_values("1M%", ascending=False).round(2))
-        st.caption(f"**{sec}** — {len(show)} stocks (1M return se sorted)")
-        st.dataframe(show, width="stretch", hide_index=True)
-
-    st.divider()
-    # --- Day-by-day: slider picks a date → that day's sector returns ---
-    pdates = q("SELECT DISTINCT date FROM prices ORDER BY date DESC")["date"].tolist()
-    seld = date_slider("📅 Kis din ka sector performance (din-b-din)", pdates, "sector_date")
-    dayagg = sector_daily_returns()
-    dayagg = dayagg[dayagg["date"] == seld].sort_values("avg_ret", ascending=False)
-    st.markdown(f"#### 📊 {seld} — us din har sector ka avg 1-day return")
-    if dayagg.empty:
-        st.info("Us din ka sector data nahi.")
-    else:
-        dfig = go.Figure(go.Bar(
-            x=dayagg["avg_ret"], y=dayagg["sector"], orientation="h",
-            marker_color=["#10b981" if v >= 0 else "#f43f5e" for v in dayagg["avg_ret"]],
-            text=[f"{v:+.2f}%" for v in dayagg["avg_ret"]], textposition="auto"))
-        dfig.update_layout(height=420, margin=dict(l=0, r=0, t=8, b=0),
-                           xaxis_title=f"Avg 1-day return on {seld} %",
-                           yaxis=dict(autorange="reversed"))
-        st.plotly_chart(dfig, width="stretch")
-        st.caption("Slider se **pichhle din scrub** karo — us din kaunsa sector chala/gira "
-                   "(din-b-din sector rotation).")
-
-# =========================================================================== #
-# TAB — Index / Market (NIFTY + sectoral indices, VIX)
-# =========================================================================== #
-elif section == "📈 Index / Market":
-    st.subheader("Index / Market — NIFTY & sectoral indices")
+elif section == "🌐 Market":
+    st.subheader("Market — indices, VIX & sector performance")
     st.caption("Poore market ka view — jo index data (NIFTY / BANK / sectoral) roz "
                "aata hai. Charts last 60 trading din ke.")
 
@@ -1540,6 +1480,61 @@ elif section == "📈 Index / Market":
         sec_snap = sec_snap.sort_values("1D %", ascending=False)
     st.dataframe(sec_snap, hide_index=True, width="stretch")
     st.caption("1D se sorted — aaj ka sector rotation. Green = up. NSE index data (roz update).")
+
+    st.divider()
+    st.markdown("### 🏭 Sector performance — our F&O stocks (avg per sector)")
+    base = q("SELECT symbol, ann_volatility, put_call_ratio, daily_return FROM stats")
+    if base.empty:
+        st.info("Stats abhi nahi. `python analysis.py` chalao.")
+    else:
+        df = base.merge(return_windows().reset_index(), on="symbol", how="left")
+        df["ret_1d"] = df["daily_return"] * 100
+        df["ann_vol"] = df["ann_volatility"] * 100
+        df["sector"] = df["symbol"].map(sectors.sector_of)
+        agg = (df.groupby("sector").agg(
+                   n=("symbol", "count"), ret_1d=("ret_1d", "mean"),
+                   ret_1w=("ret_1w", "mean"), ret_1m=("ret_1m", "mean"),
+                   ret_1y=("ret_1y", "mean"), ann_vol=("ann_vol", "mean"),
+                   pcr=("put_call_ratio", "mean")).reset_index()
+                 .sort_values("ret_1m", ascending=False))
+
+        st.markdown("#### 📋 Trailing performance (as of latest — avg 1D/1W/1M/1Y)")
+        st.markdown(render_sector_table(agg), unsafe_allow_html=True)
+
+        # drill-down — stocks in a sector
+        st.markdown("#### 🔎 Sector drill-down")
+        sec = st.selectbox("Sector chuno", agg["sector"].tolist())
+        show = (df[df["sector"] == sec]
+                [["symbol", "ret_1d", "ret_1w", "ret_1m", "ret_1y", "ann_vol",
+                  "put_call_ratio"]]
+                .rename(columns={"ret_1d": "1D%", "ret_1w": "1W%", "ret_1m": "1M%",
+                                 "ret_1y": "1Y%", "ann_vol": "Ann Vol%",
+                                 "put_call_ratio": "PCR"})
+                .sort_values("1M%", ascending=False).round(2))
+        st.caption(f"**{sec}** — {len(show)} stocks (1M return se sorted)")
+        st.dataframe(show, width="stretch", hide_index=True)
+
+    st.divider()
+    # --- Day-by-day: slider picks a date → that day's sector returns ---
+    pdates = q("SELECT DISTINCT date FROM prices ORDER BY date DESC")["date"].tolist()
+    seld = date_slider("📅 Kis din ka sector performance (din-b-din)", pdates, "sector_date")
+    dayagg = sector_daily_returns()
+    dayagg = dayagg[dayagg["date"] == seld].sort_values("avg_ret", ascending=False)
+    st.markdown(f"#### 📊 {seld} — us din har sector ka avg 1-day return")
+    if dayagg.empty:
+        st.info("Us din ka sector data nahi.")
+    else:
+        dfig = go.Figure(go.Bar(
+            x=dayagg["avg_ret"], y=dayagg["sector"], orientation="h",
+            marker_color=["#10b981" if v >= 0 else "#f43f5e" for v in dayagg["avg_ret"]],
+            text=[f"{v:+.2f}%" for v in dayagg["avg_ret"]], textposition="auto"))
+        dfig.update_layout(height=420, margin=dict(l=0, r=0, t=8, b=0),
+                           xaxis_title=f"Avg 1-day return on {seld} %",
+                           yaxis=dict(autorange="reversed"))
+        st.plotly_chart(dfig, width="stretch")
+        st.caption("Slider se **pichhle din scrub** karo — us din kaunsa sector chala/gira "
+                   "(din-b-din sector rotation).")
+
 
 # =========================================================================== #
 # TAB — Compare (multi-stock side-by-side)

@@ -116,9 +116,12 @@ Saare ~210 stocks ka **computed math ek table me** — sort karke compare karo (
 Return, Sharpe, Beta, Correlation, Avg-delivery, PCR, premium%, **1D/1W/1M returns**, etc.).
 Symbol column + header **pinned** rehte hain; right scroll karke saare columns dekho.
 
-### 📈 Index / Market
-NIFTY 50 / BANK / FINNIFTY ke charts + **India VIX** (fear gauge) + broad aur sectoral
-index table (Close + **1D/1W/1M %**). Poore market ka view — kaunsa sector chala.
+### 🌐 Market
+Ek jagah poora market view:
+- **Indices** — NIFTY 50 / BANK / FINNIFTY charts + **India VIX** (fear gauge) + broad aur
+  sectoral index table (official NSE, Close + **1D/1W/1M %**) — kaunsa sector chala.
+- **Sector performance (humare F&O stocks)** — 17 macro-sectors ka avg (1D/1W/1M/1Y) +
+  **drill-down** (sector ke stocks) + **day-by-day** sector scrub (slider se pichhle din).
 
 ---
 
