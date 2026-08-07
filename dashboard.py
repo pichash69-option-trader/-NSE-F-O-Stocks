@@ -283,16 +283,17 @@ def q(sql, params=()):
         conn.close()
 
 
-def date_slider(label, dates_desc, key, window=60):
-    """Slider over the most recent `window` trading days (default = latest).
-    Slide left = older. Falls back to a caption if only one date exists."""
+def date_slider(label, dates_desc, key, window=60, default=None):
+    """Slider over the most recent `window` trading days (default = latest, or
+    `default` if given & in range). Slide left = older."""
     recent = list(reversed(dates_desc[:window]))     # ascending, latest last
     if not recent:
         return None
     if len(recent) == 1:
         st.caption(f"{label}: {recent[0]}")
         return recent[0]
-    return st.select_slider(label, options=recent, value=recent[-1], key=key)
+    val = default if default in recent else recent[-1]
+    return st.select_slider(label, options=recent, value=val, key=key)
 
 
 @st.cache_data(ttl=300)
@@ -756,8 +757,14 @@ elif section == "🔬 Analysis":
         st.info(f"{symbol}: koi data nahi.")
     else:
         dates = list(dd.index)                       # ascending date strings
+        # F&O bhavcopy lags prices by ~1-2 days, so default to the latest day
+        # that actually has futures data (else F&O rows would show "—").
+        if "fut_oi" in dd.columns and dd["fut_oi"].notna().any():
+            default_day = dd.index[dd["fut_oi"].notna()][-1]
+        else:
+            default_day = dates[-1]
         sel = date_slider("📅 Kis din ka analysis (slider se din badlo)",
-                          dates[::-1], "an_date", window=len(dates))
+                          dates[::-1], "an_date", window=len(dates), default=default_day)
         i = dates.index(sel)
         row = dd.loc[sel]
         prev = dd.iloc[i - 1] if i > 0 else None
@@ -788,6 +795,10 @@ elif section == "🔬 Analysis":
 
         # ---- kal -> aaj: every signal + its matlab ----
         st.markdown("#### Kal → Aaj · har signal ka **matlab**")
+        if "fut_oi" not in dd.columns or pd.isna(row.get("fut_oi")):
+            st.caption("ℹ️ Is din ka **F&O data abhi nahi aaya** (futures/options bhavcopy prices "
+                       "se 1–2 din late aati hai) — isliye buildup / premium% / PCR '—' hai. "
+                       "Slider ko pichhle din pe le jao, poora F&O interpretation dikhega.")
         oi_val = ("—" if pd.isna(row.get("fut_oi"))
                   else f"OI {_fmt(row['fut_oi'])}" + (f" ({od:+.1f}%)" if od is not None else ""))
         reads = [
