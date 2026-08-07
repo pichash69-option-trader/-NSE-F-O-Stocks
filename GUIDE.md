@@ -86,7 +86,11 @@ signal ka **kal → aaj change + matlab**:
 - **Futures premium %** — premium (bullish/carry) vs discount (bearish).
 - **Max pain** — option writers ka target strike; price upar/neeche → expiry ke paas us taraf pull.
 - **Options PCR** — puts vs calls, kal se shift.
+- **5-day trend** (har signal ke saath) — kitne din se ek direction me (streak = reliable,
+  1-din blip = noise). Ye single-day change ko context deta hai.
 - **Overall read** — sab signals milaake bullish / bearish / mixed lean.
+- **📎 Extra context** (collapsible) — turnover/trades, rollover (near vs next-month OI),
+  India VIX (us din), FII/DII cash flow. Secondary/market-wide signals.
 - **Us din ke events** — bulk/block deals, short selling, corp-action ex-date, F&O ban.
 - ⚠️ Interpretations **typical meaning** hain (educational) — prediction/advice **NAHI**.
 

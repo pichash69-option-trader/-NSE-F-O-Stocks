@@ -482,8 +482,8 @@ def ticker_html():
 def stock_daily(symbol):
     """One row per date for a stock — price, delivery, futures OI/premium, PCR —
     aligned by date. Powers the day-by-day Analysis tab."""
-    px = q("SELECT date, open, high, low, close, prev_close, volume, deliv_pct "
-           "FROM prices WHERE symbol=? ORDER BY date", (symbol,))
+    px = q("SELECT date, open, high, low, close, prev_close, volume, turnover, "
+           "num_trades, deliv_pct FROM prices WHERE symbol=? ORDER BY date", (symbol,))
     if px.empty:
         return px
     d = px.set_index("date")
@@ -643,6 +643,24 @@ def _read_overall(chg, doi, deliv):
     if sig <= -2:
         return ("🔴 Overall bearish lean", "dn")
     return ("🟡 Mixed / neutral din", "neu")
+
+
+def _trend5(dd, key, sel, n=5):
+    """Recent multi-day direction of `key` ending at `sel` (1-day change is noisy;
+    a multi-day streak is more reliable). Returns e.g. '↑ 5d rising'."""
+    if key not in dd.columns:
+        return "—"
+    idx = list(dd.index)
+    win = dd[key].iloc[max(0, idx.index(sel) - n + 1): idx.index(sel) + 1].dropna()
+    if len(win) < 3:
+        return "—"
+    net = win.iloc[-1] - win.iloc[0]
+    ups, downs, d = int((win.diff() > 0).sum()), int((win.diff() < 0).sum()), len(win)
+    if ups > downs and net > 0:
+        return f"↑ {d}d rising"
+    if downs > ups and net < 0:
+        return f"↓ {d}d falling"
+    return f"→ {d}d flat/mixed"
 
 
 # --------------------------------------------------------------------------- #
@@ -875,23 +893,56 @@ elif section == "🔬 Analysis":
 
         reads = [
             ("Price", f"{row['close']:,.1f} ({schg:+.2f}%)"
-                if pd.notna(schg) else f"{row['close']:,.1f}", _read_move(schg)),
-            ("Gap & range", f"{gap:+.2f}% gap" if pd.notna(gap) else "—", _read_gap(gap, rng)),
-            ("vs NIFTY", f"NIFTY {nchg:+.2f}%" if pd.notna(nchg) else "—", _read_relstr(schg, nchg)),
-            ("Sector", f"{savg:+.2f}%" if pd.notna(savg) else "—", _read_sector(schg, savg, sname)),
+                if pd.notna(schg) else f"{row['close']:,.1f}",
+             _trend5(dd, "close", sel), _read_move(schg)),
+            ("Gap & range", f"{gap:+.2f}% gap" if pd.notna(gap) else "—", "", _read_gap(gap, rng)),
+            ("vs NIFTY", f"NIFTY {nchg:+.2f}%" if pd.notna(nchg) else "—", "",
+             _read_relstr(schg, nchg)),
+            ("Sector", f"{savg:+.2f}%" if pd.notna(savg) else "—", "",
+             _read_sector(schg, savg, sname)),
             ("Delivery %", f"{row['deliv_pct']:.1f}%" if pd.notna(row.get("deliv_pct")) else "—",
-             _read_deliv(row.get("deliv_pct"), ddv)),
-            ("F&O buildup", oi_val, _read_buildup(schg, row.get("fut_chg_oi"))),
+             _trend5(dd, "deliv_pct", sel), _read_deliv(row.get("deliv_pct"), ddv)),
+            ("F&O buildup", oi_val, _trend5(dd, "fut_oi", sel),
+             _read_buildup(schg, row.get("fut_chg_oi"))),
             ("Futures premium", f"{row['prem_pct']:+.2f}%" if pd.notna(row.get("prem_pct")) else "—",
-             _read_prem(row.get("prem_pct"))),
-            ("Max pain", f"₹{mp:,.0f}" if mp else "—", _read_maxpain(row.get("close"), mp)),
+             _trend5(dd, "prem_pct", sel), _read_prem(row.get("prem_pct"))),
+            ("Max pain", f"₹{mp:,.0f}" if mp else "—", "", _read_maxpain(row.get("close"), mp)),
             ("Options PCR", f"{row['pcr']:.2f}" if pd.notna(row.get("pcr")) else "—",
-             _read_pcr(row.get("pcr"), pcr_d)),
+             _trend5(dd, "pcr", sel), _read_pcr(row.get("pcr"), pcr_d)),
         ]
-        md = ["| Signal | Aaj | Matlab |", "|---|---|---|"]
-        for name, val, (txt, cls) in reads:
-            md.append(f"| **{name}** | {val} | {_EMO[cls]} {txt} |")
+        md = ["| Signal | Aaj | 5-day trend | Matlab |", "|---|---|---|---|"]
+        for name, val, trend, (txt, cls) in reads:
+            md.append(f"| **{name}** | {val} | {trend or '—'} | {_EMO[cls]} {txt} |")
         st.markdown("\n".join(md))
+        st.caption("**5-day trend** = signal kitne din se ek direction me (streak = reliable, "
+                   "1-din blip = noise).")
+
+        # ---- extra context (secondary — collapsed) ----
+        with st.expander("📎 Extra context — turnover · rollover · VIX · FII/DII"):
+            lines = []
+            tv, nt = row.get("turnover"), row.get("num_trades")
+            if pd.notna(tv):
+                lines.append(f"- **Turnover:** ₹{tv/1e7:,.1f} Cr · **Trades:** {_fmt(nt)} "
+                             "(us din ki activity / liquidity)")
+            fexp = q("SELECT expiry, SUM(oi) oi FROM futures WHERE symbol=? AND date=? "
+                     "GROUP BY expiry ORDER BY expiry", (symbol, sel))
+            if len(fexp) >= 2:
+                near_oi, next_oi = fexp["oi"].iloc[0], fexp["oi"].iloc[1]
+                roll = next_oi / (near_oi + next_oi) * 100 if (near_oi + next_oi) else 0
+                lines.append(f"- **Rollover:** next-month me **{roll:.0f}%** OI "
+                             f"(near {_fmt(near_oi)} / next {_fmt(next_oi)}) — high = positions "
+                             "roll ho rahe (trend continue), low = unwinding (expiry ke paas useful)")
+            vx = q("SELECT close FROM vix WHERE date=?", (sel,))
+            if not vx.empty and pd.notna(vx["close"].iloc[0]):
+                lines.append(f"- **India VIX (us din):** {vx['close'].iloc[0]:.2f} "
+                             "(market fear level — high = risk-off)")
+            fd = q("SELECT category, net FROM fii_dii WHERE date=?", (sel,))
+            if not fd.empty:
+                lines.append("- **FII/DII cash (market-wide, us din):** " +
+                             " · ".join(f"{r.category} net ₹{r.net:+,.0f} Cr" for r in fd.itertuples()))
+            st.markdown("\n".join(lines) if lines else "Is din ka extra data nahi.")
+            st.caption("Ye market-wide / secondary signals hain — single-stock ke liye context, "
+                       "primary nahi.")
 
         # ---- events that day ----
         st.markdown("#### Us din ke events")
