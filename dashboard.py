@@ -749,6 +749,36 @@ if section == "📈 Equity / Cash":
         st.markdown("#### 1 · Stock — all data (din-b-din)")
         st.markdown(render_stock_table(view), unsafe_allow_html=True)
 
+        # --- Day range (candle) chart — hover par saari details ---
+        st.markdown("**Day range (candle)** — kisi bhi candle par hover karo")
+        cv = view.copy()
+        hover = [
+            (f"{d}<br>Open {o:.1f} · High {h:.1f}<br>Low {l:.1f} · Close {c:.1f}"
+             f"<br>Chg {ch:+.2f}%<br>Volume {_fmt(vol)}"
+             f"<br>Turnover ₹{tv/1e7:,.1f}Cr · Trades {_fmt(nt)}"
+             + (f"<br>Delivery {dp:.1f}%" if pd.notna(dp) else ""))
+            for d, o, h, l, c, ch, vol, tv, nt, dp in zip(
+                cv["date"], cv["open"], cv["high"], cv["low"], cv["close"],
+                cv["chg_pct"], cv["volume"], cv["turnover"], cv["num_trades"],
+                cv["deliv_pct"])]
+        candle = go.Candlestick(
+            x=cv["date"], open=cv["open"], high=cv["high"],
+            low=cv["low"], close=cv["close"],
+            increasing_line_color="#10b981", decreasing_line_color="#f43f5e",
+            increasing_fillcolor="#10b981", decreasing_fillcolor="#f43f5e",
+            text=hover, hoverinfo="text", name="")
+        fig = go.Figure(candle)
+        fig.update_layout(height=380, margin=dict(l=0, r=0, t=10, b=0),
+                          xaxis_rangeslider_visible=False,
+                          xaxis_title=None, yaxis_title="Price")
+        # Category axis: trading-day candles sit next to each other (no
+        # weekend/holiday gaps). Thin out labels so they stay readable.
+        step = max(1, len(cv) // 10)
+        fig.update_xaxes(type="category",
+                         tickmode="array",
+                         tickvals=list(cv["date"])[::step])
+        st.plotly_chart(fig, width="stretch")
+
         # --- Bulk / block deals for this stock (institutional activity) ---
         deals = q("SELECT date, deal_type, client, buy_sell, qty, price "
                   "FROM deals WHERE symbol=? ORDER BY date DESC LIMIT 200", (symbol,))
@@ -793,36 +823,6 @@ if section == "📈 Equity / Cash":
                              hide_index=True, width="stretch")
         else:
             st.caption("💼 Is stock ke koi corporate action record me nahi (is period me).")
-
-        # --- Day range (candle) chart — hover par saari details ---
-        st.markdown("**Day range (candle)** — kisi bhi candle par hover karo")
-        cv = view.copy()
-        hover = [
-            (f"{d}<br>Open {o:.1f} · High {h:.1f}<br>Low {l:.1f} · Close {c:.1f}"
-             f"<br>Chg {ch:+.2f}%<br>Volume {_fmt(vol)}"
-             f"<br>Turnover ₹{tv/1e7:,.1f}Cr · Trades {_fmt(nt)}"
-             + (f"<br>Delivery {dp:.1f}%" if pd.notna(dp) else ""))
-            for d, o, h, l, c, ch, vol, tv, nt, dp in zip(
-                cv["date"], cv["open"], cv["high"], cv["low"], cv["close"],
-                cv["chg_pct"], cv["volume"], cv["turnover"], cv["num_trades"],
-                cv["deliv_pct"])]
-        candle = go.Candlestick(
-            x=cv["date"], open=cv["open"], high=cv["high"],
-            low=cv["low"], close=cv["close"],
-            increasing_line_color="#10b981", decreasing_line_color="#f43f5e",
-            increasing_fillcolor="#10b981", decreasing_fillcolor="#f43f5e",
-            text=hover, hoverinfo="text", name="")
-        fig = go.Figure(candle)
-        fig.update_layout(height=380, margin=dict(l=0, r=0, t=10, b=0),
-                          xaxis_rangeslider_visible=False,
-                          xaxis_title=None, yaxis_title="Price")
-        # Category axis: trading-day candles sit next to each other (no
-        # weekend/holiday gaps). Thin out labels so they stay readable.
-        step = max(1, len(cv) // 10)
-        fig.update_xaxes(type="category",
-                         tickmode="array",
-                         tickvals=list(cv["date"])[::step])
-        st.plotly_chart(fig, width="stretch")
         st.caption("Futures 🔮 aur Option chain ⛓️ sidebar ke alag sections me hain.")
 
 # =========================================================================== #
@@ -1431,27 +1431,6 @@ elif section == "📊 Math stats":
 elif section == "🏭 Sectors":
     st.subheader("Sector-wise performance")
 
-    # --- Day-by-day: slider picks a date → that day's sector returns ---
-    pdates = q("SELECT DISTINCT date FROM prices ORDER BY date DESC")["date"].tolist()
-    seld = date_slider("📅 Kis din ka sector performance (din-b-din)", pdates, "sector_date")
-    dayagg = sector_daily_returns()
-    dayagg = dayagg[dayagg["date"] == seld].sort_values("avg_ret", ascending=False)
-    st.markdown(f"#### 📊 {seld} — us din har sector ka avg 1-day return")
-    if dayagg.empty:
-        st.info("Us din ka sector data nahi.")
-    else:
-        dfig = go.Figure(go.Bar(
-            x=dayagg["avg_ret"], y=dayagg["sector"], orientation="h",
-            marker_color=["#10b981" if v >= 0 else "#f43f5e" for v in dayagg["avg_ret"]],
-            text=[f"{v:+.2f}%" for v in dayagg["avg_ret"]], textposition="auto"))
-        dfig.update_layout(height=420, margin=dict(l=0, r=0, t=8, b=0),
-                           xaxis_title=f"Avg 1-day return on {seld} %",
-                           yaxis=dict(autorange="reversed"))
-        st.plotly_chart(dfig, width="stretch")
-        st.caption("Slider se **pichhle din scrub** karo — us din kaunsa sector chala/gira "
-                   "(din-b-din sector rotation).")
-
-    st.divider()
     base = q("SELECT symbol, ann_volatility, put_call_ratio, daily_return FROM stats")
     if base.empty:
         st.info("Stats abhi nahi. `python analysis.py` chalao.")
@@ -1482,6 +1461,27 @@ elif section == "🏭 Sectors":
                 .sort_values("1M%", ascending=False).round(2))
         st.caption(f"**{sec}** — {len(show)} stocks (1M return se sorted)")
         st.dataframe(show, width="stretch", hide_index=True)
+
+    st.divider()
+    # --- Day-by-day: slider picks a date → that day's sector returns ---
+    pdates = q("SELECT DISTINCT date FROM prices ORDER BY date DESC")["date"].tolist()
+    seld = date_slider("📅 Kis din ka sector performance (din-b-din)", pdates, "sector_date")
+    dayagg = sector_daily_returns()
+    dayagg = dayagg[dayagg["date"] == seld].sort_values("avg_ret", ascending=False)
+    st.markdown(f"#### 📊 {seld} — us din har sector ka avg 1-day return")
+    if dayagg.empty:
+        st.info("Us din ka sector data nahi.")
+    else:
+        dfig = go.Figure(go.Bar(
+            x=dayagg["avg_ret"], y=dayagg["sector"], orientation="h",
+            marker_color=["#10b981" if v >= 0 else "#f43f5e" for v in dayagg["avg_ret"]],
+            text=[f"{v:+.2f}%" for v in dayagg["avg_ret"]], textposition="auto"))
+        dfig.update_layout(height=420, margin=dict(l=0, r=0, t=8, b=0),
+                           xaxis_title=f"Avg 1-day return on {seld} %",
+                           yaxis=dict(autorange="reversed"))
+        st.plotly_chart(dfig, width="stretch")
+        st.caption("Slider se **pichhle din scrub** karo — us din kaunsa sector chala/gira "
+                   "(din-b-din sector rotation).")
 
 # =========================================================================== #
 # TAB — Index / Market (NIFTY + sectoral indices, VIX)
