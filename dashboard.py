@@ -475,11 +475,120 @@ def ticker_html():
 
 
 # --------------------------------------------------------------------------- #
+# Analysis tab — one stock, day-by-day, with plain-language interpretation
+# --------------------------------------------------------------------------- #
+@st.cache_data(ttl=300)
+def stock_daily(symbol):
+    """One row per date for a stock — price, delivery, futures OI/premium, PCR —
+    aligned by date. Powers the day-by-day Analysis tab."""
+    px = q("SELECT date, close, prev_close, volume, deliv_pct FROM prices "
+           "WHERE symbol=? ORDER BY date", (symbol,))
+    if px.empty:
+        return px
+    d = px.set_index("date")
+    d["chg_pct"] = (d["close"] / d["prev_close"] - 1) * 100
+
+    fut = q("SELECT date, expiry, close, oi, chg_oi FROM futures WHERE symbol=? "
+            "ORDER BY date, expiry", (symbol,))
+    if not fut.empty:
+        g = fut.groupby("date")
+        d["fut_oi"] = g["oi"].sum()
+        d["fut_chg_oi"] = g["chg_oi"].sum()
+        near = fut.sort_values("expiry").groupby("date")["close"].first()  # near-month close
+        d["prem_pct"] = (near - d["close"]) / d["close"] * 100
+
+    opt = q("SELECT date, opt_type, SUM(oi) oi FROM options WHERE symbol=? "
+            "GROUP BY date, opt_type", (symbol,))
+    if not opt.empty:
+        p = opt.pivot(index="date", columns="opt_type", values="oi")
+        if "PE" in p.columns and "CE" in p.columns:
+            d["pcr"] = p["PE"] / p["CE"]
+    return d
+
+
+_EMO = {"up": "🟢", "dn": "🔴", "neu": "🟡"}
+
+
+def _read_move(chg):
+    if pd.isna(chg):
+        return ("—", "neu")
+    mag = "Bada" if abs(chg) >= 3 else "Halka" if abs(chg) < 1 else "Theek-thaak"
+    return ((f"{mag} up move — buyers haavi", "up") if chg >= 0
+            else (f"{mag} down move — sellers haavi", "dn"))
+
+
+def _read_deliv(deliv, dd):
+    if pd.isna(deliv):
+        return ("—", "neu")
+    if deliv >= 60:
+        base, c = "High delivery — real conviction (log actually shares le ja rahe)", "up"
+    elif deliv >= 40:
+        base, c = "Moderate delivery", "neu"
+    else:
+        base, c = "Low delivery — zyada intraday churn / speculation", "dn"
+    if pd.notna(dd):
+        base += f" · kal se {'badhi' if dd > 2 else 'ghati' if dd < -2 else 'flat'}"
+    return (base, c)
+
+
+def _read_buildup(chg, doi):
+    if pd.isna(chg) or pd.isna(doi):
+        return ("—", "neu")
+    up = chg >= 0
+    if up and doi > 0:
+        return ("Long buildup — naye longs ban rahe, bullish conviction", "up")
+    if up and doi <= 0:
+        return ("Short covering — shorts exit (price↑ OI↓), bullish par weaker", "up")
+    if not up and doi > 0:
+        return ("Short buildup — naye shorts ban rahe, bearish conviction", "dn")
+    return ("Long unwinding — longs exit (price↓ OI↓), bearish par weaker", "dn")
+
+
+def _read_prem(prem):
+    if pd.isna(prem):
+        return ("—", "neu")
+    if prem > 0.3:
+        return (f"Premium ({prem:+.2f}%) — future spot se upar, bullish / carry", "up")
+    if prem < -0.3:
+        return (f"Discount ({prem:+.2f}%) — future spot se neeche, bearish lean", "dn")
+    return (f"~Flat ({prem:+.2f}%) — future ≈ spot, neutral", "neu")
+
+
+def _read_pcr(pcr, dp):
+    if pd.isna(pcr):
+        return ("—", "neu")
+    lvl = ("High (puts > calls) — bearish hedging ya contrarian-bullish" if pcr > 1.2
+           else "Low (calls > puts) — bullish tilt ya call-writing" if pcr < 0.7
+           else "Balanced (puts ≈ calls)")
+    if pd.notna(dp):
+        lvl += f" · kal se {'put-OI badhi' if dp > 0.05 else 'call-OI badhi' if dp < -0.05 else 'flat'}"
+    return (f"PCR {pcr:.2f} — {lvl}", "neu")
+
+
+def _read_overall(chg, doi, deliv):
+    sig = 0
+    if pd.notna(chg):
+        sig += 1 if chg >= 0 else -1
+        if pd.notna(doi):                    # buildup adds conviction
+            if chg >= 0 and doi > 0:
+                sig += 1
+            elif chg < 0 and doi > 0:
+                sig -= 1
+    if pd.notna(deliv):
+        sig += 1 if deliv >= 55 else -1 if deliv < 40 else 0
+    if sig >= 2:
+        return ("🟢 Overall bullish lean", "up")
+    if sig <= -2:
+        return ("🔴 Overall bearish lean", "dn")
+    return ("🟡 Mixed / neutral din", "neu")
+
+
+# --------------------------------------------------------------------------- #
 # Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
-SECTIONS = ["📈 Equity / Cash", "🔮 Futures", "⛓️ Options", "🏦 Participant",
-            "📊 Math stats", "🏭 Sectors", "📈 Index / Market", "⚖️ Compare",
-            "🩺 Data health"]
+SECTIONS = ["📈 Equity / Cash", "🔬 Analysis", "🔮 Futures", "⛓️ Options",
+            "🏦 Participant", "📊 Math stats", "🏭 Sectors", "📈 Index / Market",
+            "⚖️ Compare", "🩺 Data health"]
 
 with st.sidebar:
     st.markdown(
@@ -636,6 +745,94 @@ if section == "📈 Equity / Cash":
                          tickvals=list(cv["date"])[::step])
         st.plotly_chart(fig, width="stretch")
         st.caption("Futures 🔮 aur Option chain ⛓️ sidebar ke alag sections me hain.")
+
+# =========================================================================== #
+# TAB — Analysis (one stock, day-by-day, with plain-language interpretation)
+# =========================================================================== #
+elif section == "🔬 Analysis":
+    st.subheader(f"🔬 {symbol} — deep analysis (din-by-din)")
+    dd = stock_daily(symbol)
+    if dd.empty:
+        st.info(f"{symbol}: koi data nahi.")
+    else:
+        dates = list(dd.index)                       # ascending date strings
+        sel = date_slider("📅 Kis din ka analysis (slider se din badlo)",
+                          dates[::-1], "an_date", window=len(dates))
+        i = dates.index(sel)
+        row = dd.loc[sel]
+        prev = dd.iloc[i - 1] if i > 0 else None
+
+        def _d(key, pct=False):
+            """change of `key` today vs previous day (abs, or % if pct)."""
+            if prev is None or key not in dd.columns:
+                return None
+            pv, cv = prev.get(key), row.get(key)
+            if pd.isna(pv) or pd.isna(cv):
+                return None
+            return (cv / pv - 1) * 100 if (pct and pv) else (cv - pv)
+
+        vd, ddv, od, pcr_d = _d("volume", True), _d("deliv_pct"), _d("fut_oi", True), _d("pcr")
+
+        # ---- overall read + headline metrics ----
+        otxt, _ = _read_overall(row.get("chg_pct"), row.get("fut_chg_oi"), row.get("deliv_pct"))
+        st.markdown(f"### {otxt} · {sel}")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Close", f"{row['close']:,.1f}",
+                  f"{row['chg_pct']:+.2f}%" if pd.notna(row['chg_pct']) else None)
+        c2.metric("Volume", _fmt(row["volume"]) if pd.notna(row["volume"]) else "—",
+                  f"{vd:+.0f}%" if vd is not None else None)
+        c3.metric("Delivery %", f"{row['deliv_pct']:.1f}" if pd.notna(row.get("deliv_pct")) else "—",
+                  f"{ddv:+.1f}pp" if ddv is not None else None)
+        if pd.notna(row.get("fut_oi")):
+            c4.metric("Futures OI", _fmt(row["fut_oi"]), f"{od:+.1f}%" if od is not None else None)
+
+        # ---- kal -> aaj: every signal + its matlab ----
+        st.markdown("#### Kal → Aaj · har signal ka **matlab**")
+        oi_val = ("—" if pd.isna(row.get("fut_oi"))
+                  else f"OI {_fmt(row['fut_oi'])}" + (f" ({od:+.1f}%)" if od is not None else ""))
+        reads = [
+            ("Price", f"{row['close']:,.1f} ({row['chg_pct']:+.2f}%)"
+                if pd.notna(row['chg_pct']) else f"{row['close']:,.1f}",
+             _read_move(row.get("chg_pct"))),
+            ("Delivery %", f"{row['deliv_pct']:.1f}%" if pd.notna(row.get("deliv_pct")) else "—",
+             _read_deliv(row.get("deliv_pct"), ddv)),
+            ("F&O buildup", oi_val, _read_buildup(row.get("chg_pct"), row.get("fut_chg_oi"))),
+            ("Futures premium", f"{row['prem_pct']:+.2f}%" if pd.notna(row.get("prem_pct")) else "—",
+             _read_prem(row.get("prem_pct"))),
+            ("Options PCR", f"{row['pcr']:.2f}" if pd.notna(row.get("pcr")) else "—",
+             _read_pcr(row.get("pcr"), pcr_d)),
+        ]
+        md = ["| Signal | Aaj | Matlab |", "|---|---|---|"]
+        for name, val, (txt, cls) in reads:
+            md.append(f"| **{name}** | {val} | {_EMO[cls]} {txt} |")
+        st.markdown("\n".join(md))
+
+        # ---- events that day ----
+        st.markdown("#### Us din ke events")
+        ev = False
+        if not q("SELECT 1 FROM secban WHERE symbol=? AND date=?", (symbol, sel)).empty:
+            st.error("🚫 Is din stock **F&O ban** me tha (koi fresh F&O position nahi)."); ev = True
+        ca = q("SELECT action_type, subject FROM corp_actions WHERE symbol=? AND ex_date=?",
+               (symbol, sel))
+        if not ca.empty:
+            st.warning("💼 **Corp action ex-date:** " +
+                       " · ".join(f"{r.action_type} ({r.subject[:45]})" for r in ca.itertuples()))
+            ev = True
+        dl = q("SELECT deal_type, buy_sell, qty, price, client FROM deals "
+               "WHERE symbol=? AND date=?", (symbol, sel))
+        if not dl.empty:
+            st.info(f"🏦 **{len(dl)} bulk/block deal(s)** is din:")
+            st.dataframe(dl, hide_index=True, width="stretch")
+            ev = True
+        ssq = q("SELECT qty FROM short_selling WHERE symbol=? AND date=?", (symbol, sel))
+        if not ssq.empty and pd.notna(ssq["qty"].iloc[0]):
+            st.caption(f"📉 Short selling is din: **{_fmt(ssq['qty'].iloc[0])}** shares short hui.")
+            ev = True
+        if not ev:
+            st.caption("Koi special event nahi is din (na deal, na ban, na corp-action).")
+
+        st.caption("⚠️ Ye interpretations **typical meaning** batate hain (educational/research) — "
+                   "guaranteed prediction ya **trading advice NAHI**. Apne research + risk pe.")
 
 # =========================================================================== #
 # TAB — Futures (totals + estimated participant split)

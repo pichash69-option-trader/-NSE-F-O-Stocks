@@ -73,10 +73,23 @@ Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%*
 - **Matlab:** FII ka rukh **market sentiment** dikhata hai — FII net long badh raha =
   big money bullish. (Ye **market-wide** hai, single-stock nahi.)
 
+### 🔬 Analysis
+Ek stock ka **poora daily deep-dive**, **din-by-din** (date slider se koi bhi din). Har
+signal ka **kal → aaj change + matlab**:
+- **Price** — up/down move ka size + kaun haavi (buyers/sellers).
+- **Delivery %** — high = real conviction, low = intraday churn; kal se badhi/ghati.
+- **F&O buildup** — futures OI + price se: **Long buildup** (price↑ OI↑ bullish) · **Short
+  covering** (price↑ OI↓) · **Short buildup** (price↓ OI↑ bearish) · **Long unwinding** (price↓ OI↓).
+- **Futures premium %** — premium (bullish/carry) vs discount (bearish).
+- **Options PCR** — puts vs calls, kal se shift.
+- **Overall read** — sab signals milaake bullish / bearish / mixed lean.
+- **Us din ke events** — bulk/block deals, short selling, corp-action ex-date, F&O ban.
+- ⚠️ Interpretations **typical meaning** hain (educational) — prediction/advice **NAHI**.
+
 ### 📊 Math stats
 Saare ~210 stocks ka **computed math ek table me** — sort karke compare karo (Volatility,
-Return, Sharpe, Beta, PCR, **1D/1W/1M returns**, etc.). Symbol column + header **pinned**
-rehte hain; right scroll karke saare columns dekho.
+Return, Sharpe, Beta, Correlation, Avg-delivery, PCR, premium%, **1D/1W/1M returns**, etc.).
+Symbol column + header **pinned** rehte hain; right scroll karke saare columns dekho.
 
 ### 📈 Index / Market
 NIFTY 50 / BANK / FINNIFTY ke charts + **India VIX** (fear gauge) + broad aur sectoral
