@@ -1249,6 +1249,36 @@ elif section == "🏦 Participant":
                 f"<span style='color:{_c};font-weight:600'>{lean}</span>",
                 unsafe_allow_html=True)
 
+        # --- 🧠 Smart-money read: FII vs Client divergence · L/S · per-participant ---
+        st.markdown("#### 🧠 Smart-money read (index futures)")
+        if "FII" in cn and "Client" in cn:
+            fii_ix, cli_ix = cn["FII"]["idxfut"], cn["Client"]["idxfut"]
+            if (fii_ix >= 0) != (cli_ix >= 0):
+                st.warning(
+                    f"⚔️ **Divergence:** FII net **{'long 🟢' if fii_ix >= 0 else 'short 🔴'}** "
+                    f"vs Client net **{'long 🟢' if cli_ix >= 0 else 'short 🔴'}** — "
+                    "institutional aur retail **opposite** side (aksar FII zyada informed).")
+            else:
+                st.caption("FII & Client index-futures me **same side** (no divergence).")
+        fr = oi[oi["client_type"] == "FII"]
+        if not fr.empty and float(fr["fut_idx_short"].iloc[0] or 0):
+            L, S = float(fr["fut_idx_long"].iloc[0]), float(fr["fut_idx_short"].iloc[0])
+            ls = L / S
+            lstxt = ("**heavily short** — index bearish" if ls < 0.6 else
+                     "**heavily long** — index bullish" if ls > 1.7 else "balanced")
+            st.markdown(f"**FII index-futures L/S ratio: {ls:.2f}** "
+                        f"(long {_fmt(L)} / short {_fmt(S)}) — {lstxt}")
+        for ct in ["FII", "DII", "Pro", "Client"]:
+            if ct not in cn:
+                continue
+            ix = cn[ct]["idxfut"]
+            emo = ("🟢 net LONG (bullish)" if ix > 0 else
+                   "🔴 net SHORT (bearish)" if ix < 0 else "flat")
+            chg = (ix - pn[ct]["idxfut"]) if ct in pn else None
+            chgs = f" · kal se {chg:+,.0f}" if chg is not None else ""
+            st.markdown(f"- **{ct}** index futures: {emo}{chgs}")
+        st.divider()
+
         vol = q("SELECT * FROM participant WHERE date=? AND metric='vol'", (pdate,))
         prev_vol = (q("SELECT * FROM participant WHERE date=? AND metric='vol'", (prevd,))
                     if prevd else None)
