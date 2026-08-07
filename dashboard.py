@@ -29,8 +29,7 @@ import sectors
 from render import (  # presentation layer (HTML tables + CSS)
     _fmt, CHAIN_LEGEND, _participant_nets, _seg_metrics,
     render_chain, render_stock_table, render_overview_table,
-    render_futures_table, render_participant_sentiment,
-    render_compare, render_sector_table,
+    render_futures_table, render_compare, render_sector_table,
 )
 from config import NIFTY50
 
@@ -1288,13 +1287,44 @@ elif section == "🏦 Participant":
         st.divider()
 
         vol = q("SELECT * FROM participant WHERE date=? AND metric='vol'", (pdate,))
-        prev_vol = (q("SELECT * FROM participant WHERE date=? AND metric='vol'", (prevd,))
-                    if prevd else None)
-        st.markdown("#### 🎯 Positioning sentiment (participant × segment · OI + Volume)")
-        st.caption("Har segment ki 2 lines — **OI** (standing position) + **Vol** (us din "
-                   "ka traded direction). Bar = long/short lean · Net · Change (vs pichhla din).")
-        st.markdown(render_participant_sentiment(oi, prev_oi, vol, prev_vol),
-                    unsafe_allow_html=True)
+        st.markdown("#### 🎯 Positioning profile (participant × segment)")
+        mchoice = st.radio("Metric", ["OI (standing positions)", "Volume (aaj traded)"],
+                           horizontal=True, key="psent_metric")
+        psrc = oi if mchoice.startswith("OI") else vol
+        pm = {r["client_type"]: _seg_metrics(r) for _, r in psrc.iterrows()}
+        SEGS = ["Index Futures", "Stock Futures", "Index Options", "Stock Options"]
+        SHORT = ["IdxFut", "StkFut", "IdxOpt", "StkOpt"]
+        PARTIS = [p for p in ["FII", "DII", "Pro", "Client"] if p in pm]
+        PCOL = {"FII": "#6366f1", "DII": "#f59e0b", "Pro": "#a855f7", "Client": "#10b981"}
+
+        # --- Top: combined "sum" chart (all participants, all segments) ---
+        st.markdown("**Σ Sum view — sab participants, sab segments**")
+        cfig = go.Figure()
+        for p in PARTIS:
+            cfig.add_trace(go.Bar(x=SHORT, y=[pm[p][s][0] for s in SEGS], name=p,
+                                  marker_color=PCOL[p]))
+        cfig.add_hline(y=0, line_color="#6b7280")
+        cfig.update_layout(barmode="group", height=300, margin=dict(l=0, r=0, t=8, b=0),
+                           legend=dict(orientation="h", y=1.15),
+                           yaxis_title="Net (long+ / short−)")
+        st.plotly_chart(cfig, width="stretch", key="psent_sum")
+        st.caption("Har segment me kaun kitna **net long(+) / short(−)** "
+                   "(options: bullish+ / bearish−). 0 line ke upar = bullish lean.")
+
+        # --- Per-participant profile charts (alag-alag) ---
+        st.markdown("**Har participant ka profile (alag-alag)**")
+        cols = st.columns(len(PARTIS)) if PARTIS else []
+        for col, p in zip(cols, PARTIS):
+            nets = [pm[p][s][0] for s in SEGS]
+            bcol = ["#10b981" if n >= 0 else "#f43f5e" for n in nets]
+            pf = go.Figure(go.Bar(x=SHORT, y=nets, marker_color=bcol))
+            pf.add_hline(y=0, line_color="#6b7280")
+            pf.update_layout(height=230, margin=dict(l=0, r=0, t=28, b=0), showlegend=False,
+                             title=dict(text=p, x=0.5, font=dict(size=14)))
+            pf.update_xaxes(tickangle=-40)
+            col.plotly_chart(pf, width="stretch", key=f"psent_{p}")
+        st.caption("🟢 net long/bullish · 🔴 net short/bearish · bar height = strength. "
+                   "Exact numbers neeche **Full raw data** me.")
 
         # --- Add-on: multi-day trend + cumulative flow (FII/DII net over time) ---
         series = participant_net_series()
