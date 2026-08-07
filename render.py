@@ -342,26 +342,6 @@ def render_futures_table(fut, spot):
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
-def _participant_nets(df):
-    """Return {client_type: dict of net positions} from a participant df.
-    net = Long − Short for each segment."""
-    out = {}
-    for _, r in df.iterrows():
-        out[r["client_type"]] = {
-            "idxfut": r["fut_idx_long"] - r["fut_idx_short"],
-            "stkfut": r["fut_stk_long"] - r["fut_stk_short"],
-            "idxopt": ((r["opt_idx_call_long"] + r["opt_idx_put_long"])
-                       - (r["opt_idx_call_short"] + r["opt_idx_put_short"])),
-            "stkopt": ((r["opt_stk_call_long"] + r["opt_stk_put_long"])
-                       - (r["opt_stk_call_short"] + r["opt_stk_put_short"])),
-            "tnet": r["total_long"] - r["total_short"],
-        }
-    return out
-
-
-_SEG_ORDER = ["Stock Futures", "Index Futures", "Index Options", "Stock Options"]
-
-
 def _seg_metrics(r):
     """{segment: (net, gross)} for one participant row. Futures net = Long − Short;
     options net = bullish(call_long + put_short) − bearish(put_long + call_short)."""

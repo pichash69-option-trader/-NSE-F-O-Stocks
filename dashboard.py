@@ -27,7 +27,7 @@ import db
 import analysis
 import sectors
 from render import (  # presentation layer (HTML tables + CSS)
-    _fmt, CHAIN_LEGEND, _participant_nets, _seg_metrics,
+    _fmt, CHAIN_LEGEND, _seg_metrics,
     render_chain, render_stock_table, render_overview_table,
     render_futures_table, render_compare, render_sector_table,
 )
@@ -1249,26 +1249,7 @@ elif section == "🏦 Participant":
                 "(ya run_daily.py).")
     else:
         pdate = date_slider("Date", pdates, "fii_date")
-        prevd = q("SELECT MAX(date) d FROM participant WHERE date<? AND metric='oi'",
-                  (pdate,))["d"].iloc[0]
         oi = q("SELECT * FROM participant WHERE date=? AND metric='oi'", (pdate,))
-        prev_oi = (q("SELECT * FROM participant WHERE date=? AND metric='oi'", (prevd,))
-                   if prevd else None)
-
-        st.caption("**Bearish ‹—› Bullish** = net long/short lean (OI). **Net OI** = net "
-                   "position (futures L−S; options bullish−bearish). **Change** = pichhle "
-                   "din se net ka change (aaj kya kiya).")
-        # FII quick read
-        cn = _participant_nets(oi)
-        pn = _participant_nets(prev_oi) if prev_oi is not None else {}
-        if "FII" in cn and "FII" in pn:
-            dnet = cn["FII"]["tnet"] - pn["FII"]["tnet"]
-            lean = "bullish 🟢" if dnet >= 0 else "bearish 🔴"
-            _c = "#10b981" if dnet >= 0 else "#f43f5e"
-            st.markdown(
-                f"**FII ne aaj:** overall net **{dnet:+,.0f}** vs pichhla din → "
-                f"<span style='color:{_c};font-weight:600'>{lean}</span>",
-                unsafe_allow_html=True)
 
         # --- 🧠 Smart-money read: FII vs Client · L/S · per-participant (ALL segments) ---
         st.markdown("#### 🧠 Smart-money read (saare segments)")
