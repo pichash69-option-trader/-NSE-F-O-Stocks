@@ -78,7 +78,8 @@ Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%*
 ### 🏦 Participant
 **FII / DII / Pro / Client** ke F&O positions (Open Interest + Trading Volume).
 - **Net = Long − Short** (contracts). 🟢 net long (bullish), 🔴 net short (bearish).
-- **💰 FII/DII cash flows** — daily net buying/selling (₹Cr) + cumulative.
+- **💰 FII/DII cash flows** — profile charts: **Buy/Sell/Net** (aaj, FII & DII grouped bars)
+  + **daily net flow** (accumulating din) + **cumulative**. 🟢 net + = buying · 🔴 − = selling.
 - **🧠 Smart-money read (saare 4 segments — index/stock futures + index/stock options):**
   - **FII vs Client divergence** — har segment me: jab dono opposite side ho (institutional vs retail; aksar FII zyada informed). ⚔️ = divergence.
   - **FII futures L/S ratio** (index + stock) — long/short (< 0.6 = heavily short/bearish · > 1.7 = heavily long/bullish).
