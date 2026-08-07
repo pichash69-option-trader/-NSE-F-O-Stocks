@@ -121,7 +121,8 @@ Sab **split/bonus-adjusted** hai (neeche note). Daily return `r = aaj ka close /
 |---|---|---|
 | **PCR** (Put-Call Ratio) | `total PE OI / total CE OI` (saare strikes+expiries) | >1 = puts zyada (often oversold/bullish contrarian) · <1 = calls zyada. Sentiment gauge |
 | **Max pain** | wo strike jahan option **writers ka total payout minimum** ho | Expiry par price aksar max-pain ke aas-paas "khinchti" hai (theory) |
-| **Futures premium** | `near-month future close − spot close` | +ve (premium) = bullish lean · −ve (discount) = bearish lean |
+| **Futures premium** | `near-month future close − spot close` | +ve (premium) = bullish lean · −ve (discount) = bearish lean. **Points me** — ek stock ke liye theek |
+| **Futures premium %** | `(future − spot) / spot × 100` | Wahi premium **% of spot** me — **stocks ke beech comparable** (₹340 on MRF = 0.2%, chhote stock pe 11%). High premium% = strong bullish/expensive, discount = bearish |
 | **Total OI** | saare futures expiry ka OI sum | Kitne contracts open (participation) |
 | **OI change** | saare expiry ka Chg OI sum | Naye positions ban rahe (+) ya band ho rahe (−) |
 

@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS stats (
     zscore REAL, pct_rank_52w REAL, cagr REAL,
     skew REAL, kurtosis REAL,
     put_call_ratio REAL, total_oi INTEGER, oi_change REAL,
-    futures_premium REAL,
+    futures_premium REAL, futures_premium_pct REAL,
     PRIMARY KEY (symbol, date)
 );
 
@@ -173,7 +173,8 @@ CREATE INDEX IF NOT EXISTS idx_corp_exdate ON corp_actions(ex_date);
 
 # Columns added to `stats` after its first release — added to existing DBs via
 # ALTER (CREATE IF NOT EXISTS won't add columns to an already-created table).
-_STATS_ADDED = {"correlation": "REAL", "avg_deliv_pct": "REAL"}
+_STATS_ADDED = {"correlation": "REAL", "avg_deliv_pct": "REAL",
+                "futures_premium_pct": "REAL"}
 
 
 def init_db():

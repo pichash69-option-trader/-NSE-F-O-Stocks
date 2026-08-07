@@ -262,7 +262,8 @@ def render_overview_table(df):
             f'<td>{pcr}</td>'
             f'<td>{_fmt(r["total_oi"])}</td>'
             f'<td>{col(r["oi_change"], "{:+.0f}")}</td>'
-            f'<td>{col(r["futures_premium"], "{:+.1f}")}</td></tr>')
+            f'<td>{col(r["futures_premium"], "{:+.1f}")}</td>'
+            f'<td>{col(r.get("futures_premium_pct"), "{:+.2f}")}%</td></tr>')
     return (STOCK_CSS + OVERVIEW_CSS +
             '<div class="ovwrap"><table class="stbl ovtbl">'
             '<thead><tr>'
@@ -272,7 +273,7 @@ def render_overview_table(df):
             '<th>Z-score</th><th>52w %ile</th><th>Skew</th><th>Kurt</th>'
             '<th>Day Ret%</th><th>1W%</th><th>1M%</th><th>3M%</th><th>6M%</th><th>1Y%</th>'
             '<th>Mean Ret%</th><th>PCR</th><th>Total OI</th>'
-            '<th>OI Chg</th><th>Fut Prem</th>'
+            '<th>OI Chg</th><th>Fut Prem</th><th>Prem%</th>'
             '</tr></thead><tbody>' + "".join(rows) + '</tbody></table></div>')
 
 
@@ -283,7 +284,7 @@ OVERVIEW_CSS = """
 .ovwrap::-webkit-scrollbar{height:10px;width:10px;}
 .ovwrap::-webkit-scrollbar-thumb{background:#6366f1;border-radius:6px;}
 .ovwrap::-webkit-scrollbar-track{background:rgba(255,255,255,.04);}
-.ovtbl{min-width:1700px;font-size:11.5px;}
+.ovtbl{min-width:1760px;font-size:11.5px;}
 .ovtbl th{position:sticky;top:0;z-index:2;background:#0c1020;padding:6px 7px;}
 .ovtbl th.l{left:0;z-index:3;}
 .ovtbl td{padding:4px 7px;}

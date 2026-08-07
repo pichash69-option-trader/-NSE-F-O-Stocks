@@ -865,7 +865,8 @@ elif section == "📊 Math stats":
     stats = q("""SELECT symbol, cum_return, cagr, ann_volatility, volatility,
                         sharpe, max_drawdown, beta, correlation, avg_deliv_pct,
                         zscore, pct_rank_52w, skew, kurtosis, daily_return, mean_return,
-                        put_call_ratio, total_oi, oi_change, futures_premium
+                        put_call_ratio, total_oi, oi_change, futures_premium,
+                        futures_premium_pct
                  FROM stats""")
     if stats.empty:
         st.info("Stats abhi nahi. `python analysis.py` chalao.")
@@ -893,6 +894,7 @@ elif section == "📊 Math stats":
             "Avg delivery % (zyada → kam)": ("avg_deliv_pct", False),
             "52w %ile (high → low)": ("pct_rank_52w", False),
             "PCR (zyada → kam)": ("put_call_ratio", False),
+            "Futures premium % (premium → discount)": ("futures_premium_pct", False),
             "Symbol (A → Z)": ("symbol", True),
         }
         choice = st.selectbox("Sort by", list(sort_opts.keys()), index=0)

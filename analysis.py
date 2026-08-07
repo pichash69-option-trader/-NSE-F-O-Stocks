@@ -306,14 +306,17 @@ def fno_stats():
         oi_change = int(fg["chg_oi"].sum()) if not fg.empty else None
 
         premium = np.nan
+        premium_pct = np.nan
         if not fg.empty and sym in s.index:
             near_expiry = fg["expiry"].min()     # near-month
             near_close = fg.loc[fg.expiry == near_expiry, "close"].iloc[0]
-            premium = float(near_close - s[sym])
+            spot = s[sym]
+            premium = float(near_close - spot)
+            premium_pct = float((near_close - spot) / spot * 100) if spot else np.nan
 
         rows.append({"symbol": sym, "put_call_ratio": float(pcr) if pcr == pcr else None,
                      "total_oi": total_oi, "oi_change": oi_change,
-                     "futures_premium": premium})
+                     "futures_premium": premium, "futures_premium_pct": premium_pct})
     return pd.DataFrame(rows).set_index("symbol")
 
 
@@ -379,7 +382,8 @@ def run():
     cols = ["date", "daily_return", "cum_return", "mean_return", "volatility",
             "ann_volatility", "sharpe", "max_drawdown", "beta", "correlation",
             "avg_deliv_pct", "zscore", "pct_rank_52w", "cagr", "skew", "kurtosis",
-            "put_call_ratio", "total_oi", "oi_change", "futures_premium"]
+            "put_call_ratio", "total_oi", "oi_change", "futures_premium",
+            "futures_premium_pct"]
     for c in cols:
         if c not in merged.columns:
             merged[c] = None
