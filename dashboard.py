@@ -27,7 +27,7 @@ import db
 import analysis
 import sectors
 from render import (  # presentation layer (HTML tables + CSS)
-    _fmt, CHAIN_LEGEND, _participant_nets,
+    _fmt, CHAIN_LEGEND, _participant_nets, _seg_metrics,
     render_chain, render_stock_table, render_overview_table,
     render_futures_table, render_participant_sentiment,
     render_compare, render_sector_table,
@@ -1249,34 +1249,42 @@ elif section == "🏦 Participant":
                 f"<span style='color:{_c};font-weight:600'>{lean}</span>",
                 unsafe_allow_html=True)
 
-        # --- 🧠 Smart-money read: FII vs Client divergence · L/S · per-participant ---
-        st.markdown("#### 🧠 Smart-money read (index futures)")
-        if "FII" in cn and "Client" in cn:
-            fii_ix, cli_ix = cn["FII"]["idxfut"], cn["Client"]["idxfut"]
-            if (fii_ix >= 0) != (cli_ix >= 0):
-                st.warning(
-                    f"⚔️ **Divergence:** FII net **{'long 🟢' if fii_ix >= 0 else 'short 🔴'}** "
-                    f"vs Client net **{'long 🟢' if cli_ix >= 0 else 'short 🔴'}** — "
-                    "institutional aur retail **opposite** side (aksar FII zyada informed).")
-            else:
-                st.caption("FII & Client index-futures me **same side** (no divergence).")
-        fr = oi[oi["client_type"] == "FII"]
-        if not fr.empty and float(fr["fut_idx_short"].iloc[0] or 0):
-            L, S = float(fr["fut_idx_long"].iloc[0]), float(fr["fut_idx_short"].iloc[0])
-            ls = L / S
-            lstxt = ("**heavily short** — index bearish" if ls < 0.6 else
-                     "**heavily long** — index bullish" if ls > 1.7 else "balanced")
-            st.markdown(f"**FII index-futures L/S ratio: {ls:.2f}** "
-                        f"(long {_fmt(L)} / short {_fmt(S)}) — {lstxt}")
+        # --- 🧠 Smart-money read: FII vs Client · L/S · per-participant (ALL segments) ---
+        st.markdown("#### 🧠 Smart-money read (saare segments)")
+        cm = {r["client_type"]: _seg_metrics(r) for _, r in oi.iterrows()}
+        SEGS = ["Index Futures", "Stock Futures", "Index Options", "Stock Options"]
+        # FII futures L/S ratios
+        fut_ls, fr = {}, oi[oi["client_type"] == "FII"]
+        if not fr.empty:
+            for seg, lk, sk in [("Index Futures", "fut_idx_long", "fut_idx_short"),
+                                ("Stock Futures", "fut_stk_long", "fut_stk_short")]:
+                L, S = float(fr[lk].iloc[0] or 0), float(fr[sk].iloc[0] or 0)
+                fut_ls[seg] = (L / S) if S else None
+
+        st.markdown("**FII vs Client** — divergence + FII L/S (futures):")
+        for seg in SEGS:
+            fnet = cm.get("FII", {}).get(seg, (0, 0))[0]
+            cnet = cm.get("Client", {}).get(seg, (0, 0))[0]
+            fut = "Futures" in seg
+            fw = ("🟢 long" if fnet >= 0 else "🔴 short") if fut else \
+                 ("🟢 bullish" if fnet >= 0 else "🔴 bearish")
+            cw = ("🟢 long" if cnet >= 0 else "🔴 short") if fut else \
+                 ("🟢 bullish" if cnet >= 0 else "🔴 bearish")
+            div = "**⚔️ divergence**" if (fnet >= 0) != (cnet >= 0) else "aligned"
+            lst = ""
+            if fut and fut_ls.get(seg):
+                r_ = fut_ls[seg]
+                lst = (f" · FII L/S **{r_:.2f}** "
+                       f"({'heavily short' if r_ < 0.6 else 'heavily long' if r_ > 1.7 else 'balanced'})")
+            st.markdown(f"- **{seg}:** FII {fw} vs Client {cw} — {div}{lst}")
+
+        st.markdown("**Har participant ka net lean** (🟢 long/bullish · 🔴 short/bearish):")
         for ct in ["FII", "DII", "Pro", "Client"]:
-            if ct not in cn:
+            if ct not in cm:
                 continue
-            ix = cn[ct]["idxfut"]
-            emo = ("🟢 net LONG (bullish)" if ix > 0 else
-                   "🔴 net SHORT (bearish)" if ix < 0 else "flat")
-            chg = (ix - pn[ct]["idxfut"]) if ct in pn else None
-            chgs = f" · kal se {chg:+,.0f}" if chg is not None else ""
-            st.markdown(f"- **{ct}** index futures: {emo}{chgs}")
+            cells = [f"{sh} {'🟢' if cm[ct][seg][0] >= 0 else '🔴'}"
+                     for seg, sh in zip(SEGS, ["IdxFut", "StkFut", "IdxOpt", "StkOpt"])]
+            st.markdown(f"- **{ct}:** " + " · ".join(cells))
         st.divider()
 
         vol = q("SELECT * FROM participant WHERE date=? AND metric='vol'", (pdate,))

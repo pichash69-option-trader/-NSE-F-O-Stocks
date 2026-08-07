@@ -79,10 +79,10 @@ Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%*
 **FII / DII / Pro / Client** ke F&O positions (Open Interest + Trading Volume).
 - **Net = Long − Short** (contracts). 🟢 net long (bullish), 🔴 net short (bearish).
 - **💰 FII/DII cash flows** — daily net buying/selling (₹Cr) + cumulative.
-- **🧠 Smart-money read (index futures):**
-  - **FII vs Client divergence** — jab dono opposite side ho (institutional vs retail; aksar FII zyada informed).
-  - **FII index-futures L/S ratio** — long/short (< 0.6 = heavily short/bearish · > 1.7 = heavily long/bullish).
-  - **Per-participant** index-futures net lean (🟢 long / 🔴 short) + kal se change.
+- **🧠 Smart-money read (saare 4 segments — index/stock futures + index/stock options):**
+  - **FII vs Client divergence** — har segment me: jab dono opposite side ho (institutional vs retail; aksar FII zyada informed). ⚔️ = divergence.
+  - **FII futures L/S ratio** (index + stock) — long/short (< 0.6 = heavily short/bearish · > 1.7 = heavily long/bullish).
+  - **Per-participant net lean** — FII/DII/Pro/Client ka har segment me 🟢 long/bullish ya 🔴 short/bearish.
 - **🎯 Positioning sentiment** — har participant × segment (index/stock futures & options) OI+Vol bars.
 - **📈 Trend + 🌊 cumulative flow** charts (net position over time).
 - **Matlab:** FII ka rukh **market sentiment** dikhata hai. (Ye **market-wide** hai, single-stock nahi.)
