@@ -230,6 +230,9 @@ def render_overview_table(df):
         p52 = r["pct_rank_52w"]
         p52cell = (f'<span class="bar-bg bar-del" style="width:{p52:.0f}%"></span>'
                    f'<span class="bar-v">{p52:.0f}</span>') if pd.notna(p52) else "—"
+        dlv = r.get("avg_deliv_pct")
+        dlvcell = (f'<span class="bar-bg bar-del" style="width:{min(dlv, 100):.0f}%"></span>'
+                   f'<span class="bar-v">{dlv:.0f}%</span>') if pd.notna(dlv) else "—"
         pcr = num(r["put_call_ratio"])
         rows.append(
             f'<tr><td class="date" style="font-weight:600">{r["symbol"]}</td>'
@@ -243,6 +246,8 @@ def render_overview_table(df):
             f'<td><span class="dn">{dd:.1f}%</span></td>'
             f'<td><span class="dn">{num(r.get("var5"), "{:.2f}")}%</span></td>'
             f'<td>{num(r["beta"])}</td>'
+            f'<td>{num(r.get("correlation"))}</td>'
+            f'<td class="bar-cell">{dlvcell}</td>'
             f'<td>{col(r["zscore"], "{:+.2f}")}</td>'
             f'<td class="bar-cell">{p52cell}</td>'
             f'<td>{num(r["skew"])}</td>'
@@ -263,7 +268,7 @@ def render_overview_table(df):
             '<thead><tr>'
             '<th class="l">Symbol</th><th>Return%</th><th>CAGR%</th><th>Ann Vol</th>'
             '<th>Daily Vol</th><th>Sharpe</th><th>Sortino</th><th>Calmar</th>'
-            '<th>Max DD</th><th>VaR%</th><th>Beta</th>'
+            '<th>Max DD</th><th>VaR%</th><th>Beta</th><th>Corr</th><th>Avg Del%</th>'
             '<th>Z-score</th><th>52w %ile</th><th>Skew</th><th>Kurt</th>'
             '<th>Day Ret%</th><th>1W%</th><th>1M%</th><th>3M%</th><th>6M%</th><th>1Y%</th>'
             '<th>Mean Ret%</th><th>PCR</th><th>Total OI</th>'
@@ -278,7 +283,7 @@ OVERVIEW_CSS = """
 .ovwrap::-webkit-scrollbar{height:10px;width:10px;}
 .ovwrap::-webkit-scrollbar-thumb{background:#6366f1;border-radius:6px;}
 .ovwrap::-webkit-scrollbar-track{background:rgba(255,255,255,.04);}
-.ovtbl{min-width:1560px;font-size:11.5px;}
+.ovtbl{min-width:1700px;font-size:11.5px;}
 .ovtbl th{position:sticky;top:0;z-index:2;background:#0c1020;padding:6px 7px;}
 .ovtbl th.l{left:0;z-index:3;}
 .ovtbl td{padding:4px 7px;}

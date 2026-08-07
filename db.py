@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS stats (
     daily_return REAL, cum_return REAL, mean_return REAL,
     volatility REAL, ann_volatility REAL,
     sharpe REAL, max_drawdown REAL, beta REAL,
+    correlation REAL, avg_deliv_pct REAL,
     zscore REAL, pct_rank_52w REAL, cagr REAL,
     skew REAL, kurtosis REAL,
     put_call_ratio REAL, total_oi INTEGER, oi_change REAL,
@@ -170,10 +171,19 @@ CREATE INDEX IF NOT EXISTS idx_corp_exdate ON corp_actions(ex_date);
 """
 
 
+# Columns added to `stats` after its first release — added to existing DBs via
+# ALTER (CREATE IF NOT EXISTS won't add columns to an already-created table).
+_STATS_ADDED = {"correlation": "REAL", "avg_deliv_pct": "REAL"}
+
+
 def init_db():
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        have = {r[1] for r in conn.execute("PRAGMA table_info(stats)")}
+        for col, typ in _STATS_ADDED.items():
+            if col not in have:
+                conn.execute(f"ALTER TABLE stats ADD COLUMN {col} {typ}")
         conn.commit()
     finally:
         conn.close()

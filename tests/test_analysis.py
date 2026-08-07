@@ -128,6 +128,17 @@ def test_equity_stats_relationships():
     assert 0 <= r["pct_rank_52w"] <= 100
 
 
+def test_equity_stats_new_metrics():
+    stats = analysis.equity_stats(_synthetic_prices())
+    r = stats.loc["AAA"]
+    # avg delivery % passes through unchanged (synthetic feed = 50)
+    assert abs(r["avg_deliv_pct"] - 50.0) < 1e-9
+    # correlation is a valid coefficient (or NaN), never out of range
+    assert pd.isna(r["correlation"]) or -1.0 <= r["correlation"] <= 1.0
+    # sharpe is ANNUALIZED: (mean/std) × √252
+    assert abs(r["sharpe"] - r["mean_return"] / r["volatility"] * np.sqrt(252)) < 1e-6
+
+
 def test_equity_stats_beta_from_real_index():
     # AAA moves exactly 1.5× the index each day → beta must come out ≈ 1.5
     dates = pd.date_range("2024-01-01", periods=40, freq="D")

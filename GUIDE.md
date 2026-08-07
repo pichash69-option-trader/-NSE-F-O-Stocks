@@ -101,9 +101,10 @@ Sab **split/bonus-adjusted** hai (neeche note). Daily return `r = aaj ka close /
 |---|---|---|
 | **Volatility** (daily) | daily returns ka **standard deviation** | Roz kitna up-down (risk) |
 | **Ann. volatility** | `daily vol × √252` | Saal-bhar ka expected swing %. **High = zyada risky** |
-| **Sharpe** | `mean daily return / daily vol` (risk-free = 0) | **Risk-adjusted return**. Zyada = better (kam risk me zyada return) |
+| **Sharpe** (annualized) | `(mean daily return / daily vol) × √252` (risk-free = 0) | **Risk-adjusted return**, saal ke scale par. Zyada = better (kam risk me zyada return) |
 | **Max drawdown** | `min(close / running-peak − 1)` | Peak se sabse bada gir — worst-case loss agar top par khareeda hota |
-| **Beta** | `cov(stock, market) / var(market)` | Market ke saath kitna chalta hai. **β>1 = market se zyada swingy**, β<1 = kam. (Market = ~210 stocks ka equal-weighted average = NIFTY proxy) |
+| **Beta** | `cov(stock, Nifty 50) / var(Nifty 50)` | Market ke saath kitna chalta hai. **β>1 = market se zyada swingy**, β<1 = kam. (Real **Nifty 50** index ke against; index data na ho to ~210-stock proxy fallback) |
+| **Correlation** | `corr(stock returns, Nifty 50 returns)` | Nifty ke saath kitna **tightly** move karta (−1…+1). High (~0.7) = index ke saath chalta · low (~0.3) = apni chaal. Beta = kitna, correlation = kitna consistent |
 
 ### Position / statistics
 | Metric | Formula | Matlab |
@@ -113,6 +114,7 @@ Sab **split/bonus-adjusted** hai (neeche note). Daily return `r = aaj ka close /
 | **Skew** | daily returns ka skewness | Returns ki asymmetry. +ve = kabhi-kabhi bade up moves, −ve = crash-prone (bade down moves) |
 | **Kurtosis** | daily returns ka (excess) kurtosis | "Fat tails" — high = extreme moves (surprises) zyada aate hain |
 | **Delivery %** | `delivery qty / total traded qty × 100` | Kitne % shares actually deliver hue (intraday nahi). **High = real conviction buying** |
+| **Avg delivery %** | poore period ka average delivery % | Stock ka structural conviction. High = investor-heavy (defensive) · low = trader-heavy (speculative/churny) |
 
 ### F&O math
 | Metric | Formula | Matlab |
@@ -149,7 +151,7 @@ Sab **split/bonus-adjusted** hai (neeche note). Daily return `r = aaj ka close /
   Agar kisi symbol ke liye corp-action data na ho to purana heuristic (close ratio <0.6 /
   >1.6) fallback rehta hai. (Ticker me `|move| > 30%` wale abhi bhi drop hote hain.)
 
-- **Sharpe** yahan simple `mean/std` (daily, risk-free = 0) hai — comparison ke liye, thumb-rule.
+- **Sharpe** yahan `(mean/std) × √252` (annualized, risk-free = 0) — standard risk-adjusted-return scale.
 
 ---
 

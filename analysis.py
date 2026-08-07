@@ -222,6 +222,8 @@ def equity_stats(prices, index_close=None, corp_factors=None):
     mkt_var = float((mkt_dm ** 2).mean())
     cov = rets.sub(rets.mean()).mul(mkt_dm, axis=0).mean()   # per-symbol cov with market
     betas = (cov / mkt_var) if mkt_var else cov * np.nan
+    corrs = rets.corrwith(market)                # per-symbol correlation with market
+    avg_deliv = prices.groupby("symbol")["deliv_pct"].mean()   # avg delivery % (conviction)
 
     rows = []
     for sym in wide.columns:
@@ -251,9 +253,11 @@ def equity_stats(prices, index_close=None, corp_factors=None):
             "mean_return": float(mean_r),
             "volatility": float(vol),
             "ann_volatility": float(vol * np.sqrt(TRADING_DAYS)),
-            "sharpe": float(mean_r / vol) if vol else np.nan,
+            "sharpe": float(mean_r / vol * np.sqrt(TRADING_DAYS)) if vol else np.nan,
             "max_drawdown": max_drawdown(close),
             "beta": float(beta),
+            "correlation": float(corrs.get(sym, np.nan)),
+            "avg_deliv_pct": float(avg_deliv.get(sym, np.nan)),
             "zscore": float((last - close.mean()) / close.std()) if close.std() else np.nan,
             "pct_rank_52w": pct_rank,
             "cagr": float(cagr),
@@ -373,8 +377,8 @@ def run():
     merged = eq.join(fo, how="left") if not fo.empty else eq
 
     cols = ["date", "daily_return", "cum_return", "mean_return", "volatility",
-            "ann_volatility", "sharpe", "max_drawdown", "beta", "zscore",
-            "pct_rank_52w", "cagr", "skew", "kurtosis",
+            "ann_volatility", "sharpe", "max_drawdown", "beta", "correlation",
+            "avg_deliv_pct", "zscore", "pct_rank_52w", "cagr", "skew", "kurtosis",
             "put_call_ratio", "total_oi", "oi_change", "futures_premium"]
     for c in cols:
         if c not in merged.columns:

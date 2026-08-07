@@ -863,8 +863,8 @@ elif section == "📊 Math stats":
     st.caption("Market-wide **India VIX** aur indices ab **📈 Index / Market** section me hain.")
 
     stats = q("""SELECT symbol, cum_return, cagr, ann_volatility, volatility,
-                        sharpe, max_drawdown, beta, zscore, pct_rank_52w,
-                        skew, kurtosis, daily_return, mean_return,
+                        sharpe, max_drawdown, beta, correlation, avg_deliv_pct,
+                        zscore, pct_rank_52w, skew, kurtosis, daily_return, mean_return,
                         put_call_ratio, total_oi, oi_change, futures_premium
                  FROM stats""")
     if stats.empty:
@@ -889,6 +889,8 @@ elif section == "📊 Math stats":
             "VaR 5% (zyada risk → kam)": ("var5", False),
             "Max drawdown (bada → chhota)": ("max_drawdown", True),
             "Beta (zyada → kam)": ("beta", False),
+            "Correlation vs Nifty (zyada → kam)": ("correlation", False),
+            "Avg delivery % (zyada → kam)": ("avg_deliv_pct", False),
             "52w %ile (high → low)": ("pct_rank_52w", False),
             "PCR (zyada → kam)": ("put_call_ratio", False),
             "Symbol (A → Z)": ("symbol", True),
