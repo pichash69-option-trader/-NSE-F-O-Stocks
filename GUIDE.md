@@ -50,11 +50,14 @@ Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%*
   intraday speculation nahi). Volume high + delivery low = zyada tar intraday churn.
 
 ### 🔮 Futures
-1. **Teeno expiry** (near / next / far) ka total + changes — OHLC, Settle,
-   **Premium** (future − spot), **OI + Chg OI** (bars/colors), Σ TOTAL row.
-2. **Estimated participant split** — ⚠️ *proportional estimate* (neeche note).
-- **Matlab:** Premium +ve (future > spot) = market thoda **bullish** lean;
-  OI badh raha + price badh raha = naye long positions.
+- **Futures read (aaj)** — Premium (near), Total OI + change, near-expiry + **days-to-expiry**;
+  **Buildup** (Long/Short buildup/covering/unwinding) + 5-day OI trend; **🔄 Rollover**
+  (next-month me kitna % OI — high = positions roll ho rahe, trend continue).
+1. **Teeno expiry** (near / next / far) ka total — OHLC, Settle, **Premium** (future − spot),
+   **OI + Chg OI** (bars/colors), Σ TOTAL row.
+2. **OI + Price trend chart** (~90 din) — OI bars + price line: build ho rahi ya unwind.
+3. **Premium / basis trend chart** — premium% over time (contango ↔ backwardation shift).
+- **Matlab:** Premium +ve = **bullish**/carry lean · OI↑ + price↑ = naye longs (buildup).
 
 ### ⛓️ Options (Sensibull style)
 - **📊 OI summary (upar)** — raw chain ka actionable synthesis:

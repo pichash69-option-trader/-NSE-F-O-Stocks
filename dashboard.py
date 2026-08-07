@@ -985,13 +985,72 @@ elif section == "🔮 Futures":
         fspot = q("SELECT close FROM prices WHERE symbol=? AND date=?", (symbol, fdate))
         fspot_px = float(fspot.iloc[0]["close"]) if not fspot.empty else None
 
-        # --- 1. Futures — teeno expiry ka total + changes ---
+        dd = stock_daily(symbol)
+        drow = dd.loc[fdate] if (not dd.empty and fdate in dd.index) else None
+        fexp = q("SELECT expiry, SUM(oi) oi FROM futures WHERE symbol=? AND date=? "
+                 "GROUP BY expiry ORDER BY expiry", (symbol, fdate))
+
+        # --- Futures read (aaj): buildup · premium · OI · rollover · days-to-expiry ---
+        if drow is not None and not fexp.empty:
+            near_exp = fexp["expiry"].iloc[0]
+            dte = (pd.Timestamp(near_exp) - pd.Timestamp(fdate)).days
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Premium (near)",
+                      f"{drow.get('prem_pct'):+.2f}%" if pd.notna(drow.get("prem_pct")) else "—")
+            m2.metric("Total OI", _fmt(drow.get("fut_oi")) if pd.notna(drow.get("fut_oi")) else "—",
+                      f"{drow.get('fut_chg_oi'):+,.0f}" if pd.notna(drow.get("fut_chg_oi")) else None)
+            m3.metric("Near expiry", near_exp, f"{dte} din baaki", delta_color="off")
+            btxt, bcls = _read_buildup(drow.get("chg_pct"), drow.get("fut_chg_oi"))
+            st.markdown(f"**Buildup (aaj):** {_EMO[bcls]} {btxt}  ·  "
+                        f"5-day OI trend: **{_trend5(dd, 'fut_oi', fdate)}**")
+            if len(fexp) >= 2:
+                near_oi, next_oi = fexp["oi"].iloc[0], fexp["oi"].iloc[1]
+                roll = next_oi / (near_oi + next_oi) * 100 if (near_oi + next_oi) else 0
+                rtxt = ("**high** — positions next-month me roll ho rahe (trend continue)"
+                        if roll > 25 else
+                        "**low** — abhi near-month me concentrated (early cycle)" if roll < 10
+                        else "**building** — rollover shuru")
+                st.caption(f"🔄 **Rollover:** next-month me {roll:.0f}% OI "
+                           f"(near {_fmt(near_oi)} / next {_fmt(next_oi)}) — {rtxt}. "
+                           "Expiry ke paas rollover% zyada matter karta hai.")
+
+        # --- 1. Futures — teeno expiry ka total + changes (raw table) ---
         st.markdown("#### 1 · Futures — teeno expiry ka total + changes")
         fut = q("""SELECT expiry, open, high, low, close, settle,
                           contracts, value_lakh, oi, chg_oi
                    FROM futures WHERE symbol=? AND date=? ORDER BY expiry""",
                 (symbol, fdate))
         st.markdown(render_futures_table(fut, fspot_px), unsafe_allow_html=True)
+
+        # --- 2. OI + Price trend · 3. Premium/basis trend ---
+        fdd = dd[dd["fut_oi"].notna()].tail(90) if "fut_oi" in dd.columns else pd.DataFrame()
+        if not fdd.empty:
+            st.markdown("#### 2 · OI + Price trend (last ~90 F&O din)")
+            fig = go.Figure()
+            fig.add_trace(go.Bar(x=fdd.index, y=fdd["fut_oi"], name="Futures OI",
+                                 marker_color="rgba(99,102,241,.45)"))
+            fig.add_trace(go.Scatter(x=fdd.index, y=fdd["close"], name="Price",
+                                     line=dict(color="#10b981", width=2), yaxis="y2"))
+            fig.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0),
+                              legend=dict(orientation="h", y=1.12), yaxis=dict(title="OI"),
+                              yaxis2=dict(title="Price", overlaying="y", side="right", showgrid=False))
+            fig.update_xaxes(type="category", nticks=8)
+            st.plotly_chart(fig, width="stretch", key="fut_oi_price")
+            st.caption("OI ↑ + price ↑ = long buildup · OI ↑ + price ↓ = short buildup · "
+                       "OI ↓ = unwinding / covering.")
+
+            st.markdown("#### 3 · Premium / basis trend (%)")
+            fig2 = go.Figure(go.Scatter(
+                x=fdd.index, y=fdd["prem_pct"], name="Premium %",
+                line=dict(color="#f59e0b", width=2), fill="tozeroy",
+                fillcolor="rgba(245,158,11,.08)"))
+            fig2.add_hline(y=0, line_dash="dot", line_color="#888")
+            fig2.update_layout(height=220, margin=dict(l=0, r=0, t=10, b=0), showlegend=False,
+                               yaxis_title="Premium %")
+            fig2.update_xaxes(type="category", nticks=8)
+            st.plotly_chart(fig2, width="stretch", key="fut_prem")
+            st.caption("+ve = premium (contango — bullish/carry) · −ve = discount "
+                       "(backwardation — bearish) · 0 line = future ≈ spot.")
 
 
 # =========================================================================== #
