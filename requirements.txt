@@ -1,11 +1,16 @@
 # NSE F&O date-wise dashboard — Python dependencies
 # Install with:  pip install -r requirements.txt
+#
+# Requires Python 3.11+.
+# Tested on: pandas 3.0, numpy 2.4, streamlit 1.59, plotly 6.9 (Python 3.11.6).
+# Floors below are the modern minimums this code is known to work with — old
+# pandas 2.0 / numpy 1.24 predate breaking changes and are NOT supported.
 
-requests>=2.31
-pandas>=2.0
-numpy>=1.24
-streamlit>=1.30
-plotly>=5.18
+requests>=2.32
+pandas>=2.2
+numpy>=1.26
+streamlit>=1.40
+plotly>=5.24
 
-# testing (optional)
-pytest>=7.0
+# testing
+pytest>=8.0
