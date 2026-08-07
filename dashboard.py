@@ -482,12 +482,14 @@ def ticker_html():
 def stock_daily(symbol):
     """One row per date for a stock — price, delivery, futures OI/premium, PCR —
     aligned by date. Powers the day-by-day Analysis tab."""
-    px = q("SELECT date, close, prev_close, volume, deliv_pct FROM prices "
-           "WHERE symbol=? ORDER BY date", (symbol,))
+    px = q("SELECT date, open, high, low, close, prev_close, volume, deliv_pct "
+           "FROM prices WHERE symbol=? ORDER BY date", (symbol,))
     if px.empty:
         return px
     d = px.set_index("date")
     d["chg_pct"] = (d["close"] / d["prev_close"] - 1) * 100
+    d["gap_pct"] = (d["open"] - d["prev_close"]) / d["prev_close"] * 100
+    d["range_pct"] = (d["high"] - d["low"]) / d["prev_close"] * 100
 
     fut = q("SELECT date, expiry, close, oi, chg_oi FROM futures WHERE symbol=? "
             "ORDER BY date, expiry", (symbol,))
@@ -505,6 +507,13 @@ def stock_daily(symbol):
         if "PE" in p.columns and "CE" in p.columns:
             d["pcr"] = p["PE"] / p["CE"]
     return d
+
+
+@st.cache_data(ttl=300)
+def nifty_daily():
+    """Nifty 50 daily % change, indexed by date (for relative-strength reads)."""
+    ix = q("SELECT date, chg_pct FROM indices WHERE name='Nifty 50' ORDER BY date")
+    return ix.set_index("date")["chg_pct"] if not ix.empty else pd.Series(dtype=float)
 
 
 _EMO = {"up": "🟢", "dn": "🔴", "neu": "🟡"}
@@ -564,6 +573,58 @@ def _read_pcr(pcr, dp):
     if pd.notna(dp):
         lvl += f" · kal se {'put-OI badhi' if dp > 0.05 else 'call-OI badhi' if dp < -0.05 else 'flat'}"
     return (f"PCR {pcr:.2f} — {lvl}", "neu")
+
+
+def _read_gap(gap, rng):
+    if pd.isna(gap):
+        return ("—", "neu")
+    if abs(gap) < 0.3:
+        base, c = "Flat open (koi gap nahi)", "neu"
+    elif gap >= 0.3:
+        base, c = f"Gap-up {gap:+.2f}% — positive overnight sentiment", "up"
+    else:
+        base, c = f"Gap-down {gap:+.2f}% — negative overnight sentiment", "dn"
+    if pd.notna(rng):
+        base += f" · din ka range {rng:.1f}%"
+    return (base, c)
+
+
+def _read_relstr(schg, nchg):
+    if pd.isna(schg) or pd.isna(nchg):
+        return ("—", "neu")
+    diff = schg - nchg
+    tail = f"(stock {schg:+.2f}% vs NIFTY {nchg:+.2f}%)"
+    if diff > 0.3:
+        return (f"Outperform — market se aage {tail} · relative strength", "up")
+    if diff < -0.3:
+        return (f"Underperform — market se piche {tail} · weakness", "dn")
+    return (f"Market ke saath in-line {tail}", "neu")
+
+
+def _read_sector(schg, savg, sname):
+    if pd.isna(savg):
+        return ("—", "neu")
+    base = f"{sname}: sector avg {savg:+.2f}%"
+    if pd.isna(schg):
+        return (base, "neu")
+    same_dir = (schg >= 0) == (savg >= 0)
+    if abs(savg) >= 0.5 and same_dir:
+        return (base + " — sector-led move (poora sector isi taraf)", "up" if savg >= 0 else "dn")
+    if abs(schg - savg) >= 1.0:
+        return (base + " — stock-specific (sector se alag chala, apni news)", "neu")
+    return (base, "neu")
+
+
+def _read_maxpain(price, mp):
+    if mp is None or pd.isna(price) or not mp:
+        return ("—", "neu")
+    diff = (price - mp) / mp * 100
+    tail = f"(max pain ₹{mp:,.0f}, price {diff:+.1f}%)"
+    if diff > 1:
+        return (f"Price max-pain se **upar** {tail} — expiry ke paas neeche pull ka jhukav", "dn")
+    if diff < -1:
+        return (f"Price max-pain se **neeche** {tail} — expiry ke paas upar pull ka jhukav", "up")
+    return (f"Price ~max-pain pe pinned {tail}", "neu")
 
 
 def _read_overall(chg, doi, deliv):
@@ -801,15 +862,29 @@ elif section == "🔬 Analysis":
                        "Slider ko pichhle din pe le jao, poora F&O interpretation dikhega.")
         oi_val = ("—" if pd.isna(row.get("fut_oi"))
                   else f"OI {_fmt(row['fut_oi'])}" + (f" ({od:+.1f}%)" if od is not None else ""))
+        # extra context: gap/range · vs NIFTY · sector · max pain
+        gap, rng = row.get("gap_pct"), row.get("range_pct")
+        schg, nchg = row.get("chg_pct"), nifty_daily().get(sel)
+        sname = sectors.sector_of(symbol)
+        _sec = sector_daily_returns()
+        _srow = _sec[(_sec["date"] == sel) & (_sec["sector"] == sname)]
+        savg = _srow["avg_ret"].iloc[0] if not _srow.empty else np.nan
+        _ne = q("SELECT MIN(expiry) e FROM options WHERE symbol=? AND date=?",
+                (symbol, sel))["e"].iloc[0]
+        mp = analysis.max_pain(symbol, sel, _ne) if _ne else None
+
         reads = [
-            ("Price", f"{row['close']:,.1f} ({row['chg_pct']:+.2f}%)"
-                if pd.notna(row['chg_pct']) else f"{row['close']:,.1f}",
-             _read_move(row.get("chg_pct"))),
+            ("Price", f"{row['close']:,.1f} ({schg:+.2f}%)"
+                if pd.notna(schg) else f"{row['close']:,.1f}", _read_move(schg)),
+            ("Gap & range", f"{gap:+.2f}% gap" if pd.notna(gap) else "—", _read_gap(gap, rng)),
+            ("vs NIFTY", f"NIFTY {nchg:+.2f}%" if pd.notna(nchg) else "—", _read_relstr(schg, nchg)),
+            ("Sector", f"{savg:+.2f}%" if pd.notna(savg) else "—", _read_sector(schg, savg, sname)),
             ("Delivery %", f"{row['deliv_pct']:.1f}%" if pd.notna(row.get("deliv_pct")) else "—",
              _read_deliv(row.get("deliv_pct"), ddv)),
-            ("F&O buildup", oi_val, _read_buildup(row.get("chg_pct"), row.get("fut_chg_oi"))),
+            ("F&O buildup", oi_val, _read_buildup(schg, row.get("fut_chg_oi"))),
             ("Futures premium", f"{row['prem_pct']:+.2f}%" if pd.notna(row.get("prem_pct")) else "—",
              _read_prem(row.get("prem_pct"))),
+            ("Max pain", f"₹{mp:,.0f}" if mp else "—", _read_maxpain(row.get("close"), mp)),
             ("Options PCR", f"{row['pcr']:.2f}" if pd.notna(row.get("pcr")) else "—",
              _read_pcr(row.get("pcr"), pcr_d)),
         ]
