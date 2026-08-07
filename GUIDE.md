@@ -57,6 +57,11 @@ Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%*
   OI badh raha + price badh raha = naye long positions.
 
 ### ⛓️ Options (Sensibull style)
+- **📊 OI summary (upar)** — raw chain ka actionable synthesis:
+  - **Support** = max PE OI wala strike · **Resistance** = max CE OI wala strike · spot kaha (expected range).
+  - **Aaj ki fresh OI** — kahan naye positions ban rahe (top CE/PE OI additions).
+  - **Max pain + PCR** — teeno expiry ka ek summary table.
+  - **OI profile chart** — CE (red) vs PE (green) OI walls across strikes, spot marked.
 - **Σ SUM CHAIN** — teeno expiry ka total, strike-wise (CALLS left, PUTS right)
 - Har expiry ka apna chain (expandable) — **OHLC · Settle · Turnover chain ke andar hi** +
   **max pain**

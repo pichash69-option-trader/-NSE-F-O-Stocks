@@ -1020,6 +1020,61 @@ elif section == "⛓️ Options":
             lo, hi = max(0, atm_i - strike_win), atm_i + strike_win + 1
             return df.iloc[lo:hi]
 
+        # ---- OI SUMMARY (top): support/resistance · fresh OI · max pain + PCR · profile ----
+        expiries_all = q("SELECT DISTINCT expiry FROM options WHERE symbol=? AND date=? "
+                         "ORDER BY expiry", (symbol, odate))["expiry"].tolist()
+        near_exp = expiries_all[0] if expiries_all else None
+        nch = (q("SELECT strike, opt_type, oi, chg_oi FROM options WHERE symbol=? AND date=? "
+                 "AND expiry=?", (symbol, odate, near_exp)) if near_exp else pd.DataFrame())
+        if not nch.empty and spot_px:
+            ce = nch[nch.opt_type == "CE"].groupby("strike")[["oi", "chg_oi"]].sum()
+            pe = nch[nch.opt_type == "PE"].groupby("strike")[["oi", "chg_oi"]].sum()
+            if not ce.empty and not pe.empty:
+                st.markdown(f"#### 📊 OI summary — near expiry ({near_exp})")
+                sup, res = pe["oi"].idxmax(), ce["oi"].idxmax()
+                m1, m2, m3 = st.columns(3)
+                m1.metric("🟢 Support (max PE OI)", f"{sup:,.0f}",
+                          f"{_fmt(pe['oi'].max())} OI", delta_color="off")
+                m2.metric("Spot", f"{spot_px:,.1f}")
+                m3.metric("🔴 Resistance (max CE OI)", f"{res:,.0f}",
+                          f"{_fmt(ce['oi'].max())} OI", delta_color="off")
+                st.caption(f"Spot **{spot_px:,.1f}** ka expected range: **{sup:,.0f} (support) — "
+                           f"{res:,.0f} (resistance)**. Max PE OI = neeche cushion · max CE OI = upar wall.")
+
+                pea, cea = pe["chg_oi"].idxmax(), ce["chg_oi"].idxmax()
+                st.markdown(
+                    f"**Aaj ki fresh OI:** 🟢 PE **{pea:,.0f}** me {_fmt(pe['chg_oi'].max())} add "
+                    f"(support ban rahi) · 🔴 CE **{cea:,.0f}** me {_fmt(ce['chg_oi'].max())} add "
+                    "(resistance ban rahi)")
+
+                mp_rows = []
+                for e in expiries_all:
+                    ech = q("SELECT opt_type, SUM(oi) oi FROM options WHERE symbol=? AND date=? "
+                            "AND expiry=? GROUP BY opt_type", (symbol, odate, e))
+                    dct = dict(zip(ech["opt_type"], ech["oi"]))
+                    pcr_e = dct.get("PE", 0) / dct.get("CE", 1) if dct.get("CE") else float("nan")
+                    mp = analysis.max_pain(symbol, odate, e)
+                    mp_rows.append({"Expiry": e, "Max pain": f"{mp:,.0f}" if mp else "—",
+                                    "PCR": round(pcr_e, 2)})
+                st.markdown("**Max pain + PCR (per expiry):**")
+                st.dataframe(pd.DataFrame(mp_rows), hide_index=True, width="stretch")
+
+                allk = sorted(set(ce.index) | set(pe.index))
+                atm = min(range(len(allk)), key=lambda j: abs(allk[j] - spot_px))
+                ks = allk[max(0, atm - 14): atm + 15]
+                fig = go.Figure()
+                fig.add_trace(go.Bar(x=ks, y=[float(ce["oi"].get(k, 0)) for k in ks],
+                                     name="CE OI (resistance)", marker_color="rgba(244,63,94,.75)"))
+                fig.add_trace(go.Bar(x=ks, y=[float(pe["oi"].get(k, 0)) for k in ks],
+                                     name="PE OI (support)", marker_color="rgba(16,185,129,.75)"))
+                fig.add_vline(x=spot_px, line_dash="dash", line_color="#facc15")
+                fig.update_layout(barmode="group", height=300, margin=dict(l=0, r=0, t=10, b=0),
+                                  legend=dict(orientation="h", y=1.12),
+                                  xaxis_title="Strike", yaxis_title="OI")
+                st.markdown("**OI profile** — CE (red) vs PE (green) walls · pili line = spot")
+                st.plotly_chart(fig, width="stretch", key="oi_profile")
+                st.divider()
+
         _optraw = q("""SELECT expiry, strike, opt_type, open, high, low, close, settle,
                               volume, value_lakh, oi, chg_oi FROM options
                        WHERE symbol=? AND date=? ORDER BY expiry, strike, opt_type""",
