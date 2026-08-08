@@ -4,15 +4,10 @@ dashboard.py — date-wise NSE dashboard (Streamlit), QuantCalc-style dark theme
 
 Run:  streamlit run dashboard.py
 
-Sidebar navigation = 6 sections (5 data-types + 1 screener):
-  1. Equity / Cash      — daily OHLCV + delivery + candle chart
-  2. Futures            — all expiries: OHLC/settle/OI/premium + Σ total
-  3. Options            — Sensibull sum-chain + per-expiry chains (OHLC/settle inside)
-  4. Participant        — FII/DII/Pro/Client sentiment (OI+Vol) + trend + flow
-  5. Math stats         — all-stock statistics table (returns/vol/beta/… + 1W/1M)
-  6. Market             — NIFTY / sectoral indices + VIX + our-stocks sector performance
-  7. Compare            — multi-stock side-by-side
-  8. Data health        — pipeline status, gaps, row counts
+Sidebar navigation = 3 groups (top segmented control) → sub-tabs (radio):
+  📈 Per-stock   : Equity / Cash · Analysis · Futures · Options
+  🌐 Market-wide : Participant · Market (NIFTY/sectoral indices + VIX + sector perf)
+  📊 All-stocks  : Math stats · Compare · Data health
 """
 import os
 import json
@@ -89,20 +84,20 @@ THEME_CSS = """
 
 /* Turn ONLY the nav radio (key="navmenu") into QuantCalc menu-items;
    the days radio (7/20/50/All) keeps normal Streamlit styling. */
-.st-key-navmenu div[role="radiogroup"]{gap:6px;}
-.st-key-navmenu label[data-testid="stRadioOption"]{
+[class*="st-key-navmenu"] div[role="radiogroup"]{gap:6px;}
+[class*="st-key-navmenu"] label[data-testid="stRadioOption"]{
   display:flex;align-items:center;width:100%;
   padding:10px 14px;border-radius:10px;border:1px solid transparent;
   color:var(--qc-text2);cursor:pointer;transition:all .2s;}
-.st-key-navmenu label[data-testid="stRadioOption"] p{
+[class*="st-key-navmenu"] label[data-testid="stRadioOption"] p{
   color:inherit;font-weight:600;font-size:.95rem;}
-.st-key-navmenu label[data-testid="stRadioOption"]:hover{
+[class*="st-key-navmenu"] label[data-testid="stRadioOption"]:hover{
   color:#f3f4f6;background:rgba(255,255,255,.03);border-color:rgba(255,255,255,.05);}
 /* hide the actual radio circle — keep only the label text */
-.st-key-navmenu label[data-testid="stRadioOption"] > div > div > div:first-child{
+[class*="st-key-navmenu"] label[data-testid="stRadioOption"] > div > div > div:first-child{
   display:none;}
 /* active item — indigo glow (Streamlit marks it data-selected) */
-.st-key-navmenu label[data-testid="stRadioOption"][data-selected="true"]{
+[class*="st-key-navmenu"] label[data-testid="stRadioOption"][data-selected="true"]{
   color:#f3f4f6;background:rgba(99,102,241,.15);
   border-color:rgba(99,102,241,.35);box-shadow:0 2px 8px rgba(0,0,0,.15);}
 .qc-foot{margin-top:14px;padding-top:16px;border-top:1px solid var(--qc-border);
@@ -663,9 +658,12 @@ def _trend5(dd, key, sel, n=5):
 # --------------------------------------------------------------------------- #
 # Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
-SECTIONS = ["📈 Equity / Cash", "🔬 Analysis", "🔮 Futures", "⛓️ Options",
-            "🏦 Participant", "📊 Math stats", "🌐 Market", "⚖️ Compare",
-            "🩺 Data health"]
+GROUPS = {
+    "📈 Per-stock": ["📈 Equity / Cash", "🔬 Analysis", "🔮 Futures", "⛓️ Options"],
+    "🌐 Market-wide": ["🏦 Participant", "🌐 Market"],
+    "📊 All-stocks": ["📊 Math stats", "⚖️ Compare", "🩺 Data health"],
+}
+GROUP_KEYS = list(GROUPS)
 
 with st.sidebar:
     st.markdown(
@@ -694,8 +692,11 @@ with st.sidebar:
                         horizontal=True)
 
     st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-    section = st.radio("Navigation", SECTIONS, index=0,
-                       label_visibility="collapsed", key="navmenu")
+    group = st.segmented_control("Section group", GROUP_KEYS, default=GROUP_KEYS[0],
+                                 label_visibility="collapsed", key="navgroup") or GROUP_KEYS[0]
+    gi = GROUP_KEYS.index(group)
+    section = st.radio("Navigation", GROUPS[group], index=0,
+                       label_visibility="collapsed", key=f"navmenu{gi}")
 
     with st.popover("❓ How to use", use_container_width=True):
         st.markdown(HELP_MD)
