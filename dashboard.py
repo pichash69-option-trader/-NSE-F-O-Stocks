@@ -1235,6 +1235,88 @@ elif section == "📉 Line chart":
             "🔴 short buildup · 🟠 long unwinding. "
             "Sab pure data/statistics — koi technical indicator nahi (project rule).")
 
+        # ------------------------------------------------------------------- #
+        # Momentum panel — har NON-price data aaj apne trailing 7d/20d average
+        # se upar hai ya neeche (activity vs normal). Price ka MA nahi (rule).
+        # Full history se compute hota hai — chart timeframe se independent.
+        # ------------------------------------------------------------------- #
+        def _mom(series):
+            """(today, avg7, avg20) using the PRIOR 7/20 days (today excluded)."""
+            if series is None:
+                return None
+            s = series.dropna()
+            if len(s) < 8:
+                return None
+            today = float(s.iloc[-1])
+            a7 = float(s.iloc[-8:-1].mean())
+            a20 = float(s.iloc[-21:-1].mean()) if len(s) >= 21 else float(s.iloc[:-1].mean())
+            return today, a7, a20
+
+        if not sd.empty:
+            rng_s = (sd["high"] - sd["low"]) / sd["prev_close"] * 100
+            _oi = sd["fut_oi"] if "fut_oi" in sd.columns else None
+            _doi = sd["fut_chg_oi"].abs() if "fut_chg_oi" in sd.columns else None
+            _pcr = sd["pcr"] if "pcr" in sd.columns else None
+            # (label, series, kind) — kind drives formatting
+            scored = [
+                ("Volume", sd["volume"], "cnt"),
+                ("Delivery %", sd["deliv_pct"], "pct"),
+                ("Turnover", sd["turnover"], "cr"),
+                ("Range % (H-L)", rng_s, "pct"),
+                ("Futures OI", _oi, "cnt"),
+                ("OI change (abs)", _doi, "cnt"),
+                ("|Daily return| %", sd["chg_pct"].abs(), "pct"),
+            ]
+
+            def _fv(v, kind):
+                if kind == "cnt":
+                    return _fmt(v)
+                if kind == "cr":
+                    return f"₹{v/1e7:,.1f}Cr"
+                return f"{v:.1f}%"
+
+            rows_md, n_above, n_tot = [], 0, 0
+            for lbl, ser, kind in scored:
+                res = _mom(ser)
+                if res is None:
+                    continue
+                today, a7, a20 = res
+                n_tot += 1
+                if today > a7 and today > a20:
+                    emo, read = "🟢", "above"; n_above += 1
+                elif today < a7 and today < a20:
+                    emo, read = "🔴", "below"
+                else:
+                    emo, read = "🟡", "mixed"
+                rows_md.append(
+                    f"| {lbl} | {_fv(today,kind)} | {_fv(a7,kind)} | {_fv(a20,kind)} | {emo} {read} |")
+
+            if n_tot:
+                pct_above = round(100 * n_above / n_tot)
+                state = ("🔥 ACTIVE" if pct_above >= 70 else
+                         "⚡ MIXED" if pct_above >= 40 else "😴 QUIET")
+                # PCR shown as context only (direction-neutral → not scored)
+                pctx = ""
+                pres = _mom(_pcr)
+                if pres:
+                    pt, p7, p20 = pres
+                    pd_read = ("put-heavy vs norm" if pt > p7 and pt > p20 else
+                               "call-heavy vs norm" if pt < p7 and pt < p20 else "near norm")
+                    pctx = (f"\n\n**PCR (context, not scored):** aaj {pt:.2f} · "
+                            f"7d {p7:.2f} · 20d {p20:.2f} → {pd_read}")
+                with st.expander(f"⚡ Momentum — {n_above}/{n_tot} data above their 7d & 20d "
+                                 f"average · {state} ({pct_above}%)"):
+                    st.markdown(
+                        "Aaj ka value apne **trailing 7-din aur 20-din average** se upar (🟢) / "
+                        "neeche (🔴) / mixed (🟡). Zyada 🟢 ek saath = activity/momentum high.\n\n"
+                        "| Data | Aaj | 7d avg | 20d avg | Read |\n"
+                        "|---|--:|--:|--:|:--|\n" + "\n".join(rows_md) + pctx)
+                    st.caption(
+                        "⚠️ Yeh sirf **statistical observation** hai (activity vs recent norm) — "
+                        "koi **prediction ya buy/sell advice nahi**. Price ka moving-average "
+                        "jaan-boojh ke nahi liya (project rule). Above-average cluster ka matlab "
+                        "sirf itna: abhi normal se zyada participation/positioning ho raha hai.")
+
 # =========================================================================== #
 # TAB — Analysis (one stock, day-by-day, with plain-language interpretation)
 # =========================================================================== #
