@@ -100,6 +100,23 @@ THEME_CSS = """
 [class*="st-key-navmenu"] label[data-testid="stRadioOption"][data-selected="true"]{
   color:#f3f4f6;background:rgba(99,102,241,.15);
   border-color:rgba(99,102,241,.35);box-shadow:0 2px 8px rgba(0,0,0,.15);}
+/* ---- group selector (navgroup): 3 stacked category pills, distinct look ---- */
+[class*="st-key-navgroup"] div[role="radiogroup"]{gap:5px;margin-bottom:8px;}
+[class*="st-key-navgroup"] label[data-testid="stRadioOption"]{
+  display:flex;align-items:center;width:100%;padding:9px 13px;border-radius:9px;
+  border:1px solid rgba(255,255,255,.06);color:var(--qc-text2);cursor:pointer;
+  transition:all .2s;text-transform:uppercase;letter-spacing:.4px;}
+[class*="st-key-navgroup"] label[data-testid="stRadioOption"] p{
+  color:inherit;font-weight:700;font-size:.8rem;}
+[class*="st-key-navgroup"] label[data-testid="stRadioOption"] > div > div > div:first-child{
+  display:none;}
+[class*="st-key-navgroup"] label[data-testid="stRadioOption"]:hover{
+  color:#f3f4f6;background:rgba(255,255,255,.04);}
+[class*="st-key-navgroup"] label[data-testid="stRadioOption"][data-selected="true"]{
+  color:#fff;border-color:rgba(99,102,241,.5);
+  background:linear-gradient(90deg,rgba(99,102,241,.28),rgba(99,102,241,.10));}
+/* sub-tabs slightly indented under the active group */
+[class*="st-key-navmenu"] div[role="radiogroup"]{padding-left:8px;}
 .qc-foot{margin-top:14px;padding-top:16px;border-top:1px solid var(--qc-border);
   color:var(--qc-muted);font-size:12px;}
 .qc-foot .live{margin-top:8px;display:inline-block;background:rgba(16,185,129,.1);
@@ -692,8 +709,8 @@ with st.sidebar:
                         horizontal=True)
 
     st.markdown('<div style="height:8px"></div>', unsafe_allow_html=True)
-    group = st.segmented_control("Section group", GROUP_KEYS, default=GROUP_KEYS[0],
-                                 label_visibility="collapsed", key="navgroup") or GROUP_KEYS[0]
+    group = st.radio("Section group", GROUP_KEYS, index=0,
+                     label_visibility="collapsed", key="navgroup")
     gi = GROUP_KEYS.index(group)
     section = st.radio("Navigation", GROUPS[group], index=0,
                        label_visibility="collapsed", key=f"navmenu{gi}")
