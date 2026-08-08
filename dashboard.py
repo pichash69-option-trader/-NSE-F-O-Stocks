@@ -864,23 +864,25 @@ elif section == "📉 Line chart":
             "Chart type", ["Line", "Candle"], default="Line",
             key="lc_type", label_visibility="collapsed")
         with tb3.popover("⚙️ Overlays", use_container_width=True):
-            st.caption("**Price pane overlays**")
-            show_bands = st.checkbox("Mean ±σ bands (z-score)", value=True, key="lc_bands")
-            show_hilo = st.checkbox("High / Low levels", value=True, key="lc_hilo")
-            show_avg = st.checkbox("Average price line", value=False, key="lc_avg")
-            show_dd = st.checkbox("Max-drawdown span", value=True, key="lc_dd")
-            show_gap = st.checkbox("Gap + hi-volume markers", value=True, key="lc_gap")
-            show_mp = st.checkbox("Max-pain line (F&O)", value=True, key="lc_mp")
-            show_ca = st.checkbox("Corp-action lines", value=True, key="lc_ca")
-            show_ban = st.checkbox("F&O ban shading", value=True, key="lc_ban")
+            st.caption("Default view saaf rakha hai — jo chahiye woh yahan se on karo.")
             st.caption("**Support / Resistance**")
             show_sr = st.checkbox("Swing S/R (auto pivots)", value=True, key="lc_sr")
-            show_poc = st.checkbox("Volume POC + value area", value=True, key="lc_poc")
-            show_oiwall = st.checkbox("Option OI walls", value=True, key="lc_oiwall")
+            show_oiwall = st.checkbox("Option OI walls (top-3)", value=False, key="lc_oiwall")
+            show_poc = st.checkbox("Volume POC + value area", value=False, key="lc_poc")
+            show_mp = st.checkbox("Max-pain line (F&O)", value=True, key="lc_mp")
+            st.caption("**Stat overlays (price pane)**")
+            show_bands = st.checkbox("Mean ±σ bands (z-score)", value=False, key="lc_bands")
+            show_hilo = st.checkbox("52w High / Low levels", value=False, key="lc_hilo")
+            show_avg = st.checkbox("Average price line", value=False, key="lc_avg")
+            show_dd = st.checkbox("Max-drawdown span", value=False, key="lc_dd")
+            st.caption("**Event markers (price pane)**")
+            show_gap = st.checkbox("Gap + hi-volume markers", value=False, key="lc_gap")
+            show_ca = st.checkbox("Corp-action lines", value=False, key="lc_ca")
+            show_ban = st.checkbox("F&O ban markers", value=False, key="lc_ban")
             st.caption("**Extra panes (below)**")
             show_vol = st.checkbox("Volume pane", value=True, key="lc_vol")
             show_deliv = st.checkbox("Delivery % pane", value=True, key="lc_deliv")
-            show_futoi = st.checkbox("Futures OI pane (buildup)", value=True, key="lc_futoi")
+            show_futoi = st.checkbox("Futures OI pane (buildup)", value=False, key="lc_futoi")
             show_pcr = st.checkbox("PCR pane", value=False, key="lc_pcr")
             show_ret = st.checkbox("Daily return % pane", value=False, key="lc_ret")
             show_cum = st.checkbox("Cumulative return line", value=False, key="lc_cum")
@@ -1014,10 +1016,12 @@ elif section == "📉 Line chart":
             for k, dash in [(1, "dash"), (2, "dot")]:
                 for sign in (+1, -1):
                     yv = mean_p + sign * k * sd_p
-                    fig.add_hline(y=yv, line=dict(color="rgba(139,139,167,.45)",
+                    # only label the outer ±2σ lines to cut annotation clutter
+                    txt = f"{'+' if sign > 0 else '−'}{k}σ" if k == 2 else None
+                    fig.add_hline(y=yv, line=dict(color="rgba(139,139,167,.4)",
                                   width=1, dash=dash), row=1, col=1,
-                                  annotation_text=f"{'+' if sign>0 else '−'}{k}σ",
-                                  annotation_position="right", annotation_font_size=9)
+                                  annotation_text=txt, annotation_position="right",
+                                  annotation_font_size=9)
 
         # --- Overlay: period + 52-week high/low reference levels ---
         if show_hilo:
