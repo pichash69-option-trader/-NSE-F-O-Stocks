@@ -1162,22 +1162,31 @@ elif section == "📉 Line chart":
                               annotation_font_size=10, annotation_font_color="#f59e0b",
                               row=1, col=1)
 
-        # --- S/R 3: Option OI walls (max Put-OI = support, max Call-OI = resistance) ---
+        # --- S/R 3: Option OI walls — top-3 Put-OI supports / top-3 Call-OI
+        #     resistances. OI summed across ALL expiries via sum_chain. Rank 1
+        #     is bold/opaque, ranks 2-3 thinner/fainter. ---
         if show_oiwall and _od:
             sc = analysis.sum_chain(symbol, _od)
             if not sc.empty:
-                if "oi_PE" in sc.columns and sc["oi_PE"].notna().any():
-                    ssup = float(sc.loc[sc["oi_PE"].idxmax(), "strike"])
-                    fig.add_hline(y=ssup, line=dict(color="rgba(16,185,129,.7)", width=1.4,
-                                  dash="dashdot"), annotation_text=f"Put-OI support {ssup:,.0f}",
-                                  annotation_position="left", annotation_font_size=9,
-                                  annotation_font_color="#34d399", row=1, col=1)
-                if "oi_CE" in sc.columns and sc["oi_CE"].notna().any():
-                    sres = float(sc.loc[sc["oi_CE"].idxmax(), "strike"])
-                    fig.add_hline(y=sres, line=dict(color="rgba(244,63,94,.7)", width=1.4,
-                                  dash="dashdot"), annotation_text=f"Call-OI resist {sres:,.0f}",
-                                  annotation_position="left", annotation_font_size=9,
-                                  annotation_font_color="#f87171", row=1, col=1)
+                def _walls(col):
+                    if col not in sc.columns:
+                        return []
+                    d = sc[["strike", col]].dropna()
+                    d = d[d[col] > 0].sort_values(col, ascending=False).head(3)
+                    return [float(s) for s in d["strike"]]
+                _sty = [(1.7, .8), (1.2, .5), (1.0, .32)]      # rank -> (width, alpha)
+                for rk, kv in enumerate(_walls("oi_PE")):       # supports (Put OI)
+                    w, a = _sty[rk]
+                    fig.add_hline(y=kv, line=dict(color=f"rgba(16,185,129,{a})", width=w,
+                                  dash="dashdot"), row=1, col=1, annotation_position="left",
+                                  annotation_text=("★Put " if rk == 0 else "") + f"{kv:,.0f}",
+                                  annotation_font_size=9, annotation_font_color="#34d399")
+                for rk, kv in enumerate(_walls("oi_CE")):       # resistances (Call OI)
+                    w, a = _sty[rk]
+                    fig.add_hline(y=kv, line=dict(color=f"rgba(244,63,94,{a})", width=w,
+                                  dash="dashdot"), row=1, col=1, annotation_position="left",
+                                  annotation_text=("★Call " if rk == 0 else "") + f"{kv:,.0f}",
+                                  annotation_font_size=9, annotation_font_color="#f87171")
 
         # --- Volume pane (green up-day / red down-day) + avg-volume line ---
         if show_vol:
@@ -1311,7 +1320,8 @@ elif section == "📉 Line chart":
         st.caption(
             "⚙️ Overlays me sab on-off: σ-bands · hi-lo · drawdown · gap · **max-pain** · "
             "**corp/ban** · **Swing S/R** (R red / S green) · **Volume POC** (amber) · "
-            "**Option OI walls** (Put=support / Call=resist) · volume · delivery · **Fut-OI** · "
+            "**Option OI walls** (top-3 Put=support / Call=resist, ★=strongest) · "
+            "volume · delivery · **Fut-OI** · "
             "**PCR** · return · cumulative. "
             "Fut-OI bars ka rang = buildup: 🟢 long buildup · 🩵 short covering · "
             "🔴 short buildup · 🟠 long unwinding. "
