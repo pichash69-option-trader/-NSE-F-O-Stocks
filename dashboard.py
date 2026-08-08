@@ -873,6 +873,10 @@ elif section == "📉 Line chart":
             show_mp = st.checkbox("Max-pain line (F&O)", value=True, key="lc_mp")
             show_ca = st.checkbox("Corp-action lines", value=True, key="lc_ca")
             show_ban = st.checkbox("F&O ban shading", value=True, key="lc_ban")
+            st.caption("**Support / Resistance**")
+            show_sr = st.checkbox("Swing S/R (auto pivots)", value=True, key="lc_sr")
+            show_poc = st.checkbox("Volume POC + value area", value=True, key="lc_poc")
+            show_oiwall = st.checkbox("Option OI walls", value=True, key="lc_oiwall")
             st.caption("**Extra panes (below)**")
             show_vol = st.checkbox("Volume pane", value=True, key="lc_vol")
             show_deliv = st.checkbox("Delivery % pane", value=True, key="lc_deliv")
@@ -1098,6 +1102,83 @@ elif section == "📉 Line chart":
                     hovertemplate="<b>%{x}</b><br>F&O BAN day (MWPL >95%)<extra></extra>"),
                     row=1, col=1)
 
+        # --- S/R 1: Swing high/low pivots (recent local highs/lows, clustered) ---
+        if show_sr and len(cv) >= 7:
+            k = 3
+            hh, ll, nn = cv["high"].values, cv["low"].values, len(cv)
+            sw_hi = [float(hh[i]) for i in range(k, nn - k)
+                     if hh[i] == max(hh[i - k:i + k + 1])]
+            sw_lo = [float(ll[i]) for i in range(k, nn - k)
+                     if ll[i] == min(ll[i - k:i + k + 1])]
+
+            def _cluster(vals, tol=0.008):
+                out = []
+                for v in sorted(vals):
+                    if out and abs(v - out[-1][0]) / v <= tol:
+                        m, c = out[-1]; out[-1] = ((m * c + v) / (c + 1), c + 1)
+                    else:
+                        out.append((v, 1))
+                return out
+            cur = float(latest["close"])
+            res = sorted([(l, c) for l, c in _cluster(sw_hi) if l > cur],
+                         key=lambda t: t[0])[:2]                 # nearest 2 above
+            sup = sorted([(l, c) for l, c in _cluster(sw_lo) if l < cur],
+                         key=lambda t: -t[0])[:2]                # nearest 2 below
+            for lvl, c in res:
+                fig.add_hline(y=lvl, line=dict(color="rgba(244,63,94,.5)", width=1, dash="dash"),
+                              annotation_text=f"R {lvl:,.0f}" + (f"·{c}x" if c > 1 else ""),
+                              annotation_position="right", annotation_font_size=9,
+                              annotation_font_color="#f87171", row=1, col=1)
+            for lvl, c in sup:
+                fig.add_hline(y=lvl, line=dict(color="rgba(16,185,129,.5)", width=1, dash="dash"),
+                              annotation_text=f"S {lvl:,.0f}" + (f"·{c}x" if c > 1 else ""),
+                              annotation_position="right", annotation_font_size=9,
+                              annotation_font_color="#34d399", row=1, col=1)
+
+        # --- S/R 2: Volume-profile POC + 70% value area (volume-by-price) ---
+        if show_poc and len(cv) >= 5:
+            nb = 24
+            edges = np.linspace(p_lo, p_hi, nb + 1)
+            centers = (edges[:-1] + edges[1:]) / 2
+            vp = np.zeros(nb)
+            for lo_i, hi_i, v in zip(cv["low"].values, cv["high"].values, cv["volume"].values):
+                if not (np.isfinite(lo_i) and np.isfinite(hi_i) and np.isfinite(v)) or hi_i <= lo_i:
+                    continue
+                b0 = max(0, min(nb - 1, int(np.searchsorted(edges, lo_i) - 1)))
+                b1 = max(0, min(nb - 1, int(np.searchsorted(edges, hi_i) - 1)))
+                vp[b0:b1 + 1] += v / (b1 - b0 + 1)
+            if vp.sum() > 0:
+                poc = float(centers[int(vp.argmax())])
+                cum, total, sel = 0.0, vp.sum(), set()
+                for b in sorted(range(nb), key=lambda b: -vp[b]):
+                    sel.add(b); cum += vp[b]
+                    if cum >= 0.70 * total:
+                        break
+                va_lo, va_hi = float(edges[min(sel)]), float(edges[max(sel) + 1])
+                fig.add_hrect(y0=va_lo, y1=va_hi, fillcolor="rgba(245,158,11,.07)",
+                              line_width=0, layer="below", row=1, col=1)
+                fig.add_hline(y=poc, line=dict(color="#f59e0b", width=1.6),
+                              annotation_text=f"POC ₹{poc:,.0f}", annotation_position="left",
+                              annotation_font_size=10, annotation_font_color="#f59e0b",
+                              row=1, col=1)
+
+        # --- S/R 3: Option OI walls (max Put-OI = support, max Call-OI = resistance) ---
+        if show_oiwall and _od:
+            sc = analysis.sum_chain(symbol, _od)
+            if not sc.empty:
+                if "oi_PE" in sc.columns and sc["oi_PE"].notna().any():
+                    ssup = float(sc.loc[sc["oi_PE"].idxmax(), "strike"])
+                    fig.add_hline(y=ssup, line=dict(color="rgba(16,185,129,.7)", width=1.4,
+                                  dash="dashdot"), annotation_text=f"Put-OI support {ssup:,.0f}",
+                                  annotation_position="left", annotation_font_size=9,
+                                  annotation_font_color="#34d399", row=1, col=1)
+                if "oi_CE" in sc.columns and sc["oi_CE"].notna().any():
+                    sres = float(sc.loc[sc["oi_CE"].idxmax(), "strike"])
+                    fig.add_hline(y=sres, line=dict(color="rgba(244,63,94,.7)", width=1.4,
+                                  dash="dashdot"), annotation_text=f"Call-OI resist {sres:,.0f}",
+                                  annotation_position="left", annotation_font_size=9,
+                                  annotation_font_color="#f87171", row=1, col=1)
+
         # --- Volume pane (green up-day / red down-day) + avg-volume line ---
         if show_vol:
             vcol = [("rgba(16,185,129,.55)" if pd.notna(ch) and ch >= 0
@@ -1229,7 +1310,8 @@ elif section == "📉 Line chart":
                                 "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
         st.caption(
             "⚙️ Overlays me sab on-off: σ-bands · hi-lo · drawdown · gap · **max-pain** · "
-            "**corp-action lines** · **ban shading** · volume · delivery · **Fut-OI** · "
+            "**corp/ban** · **Swing S/R** (R red / S green) · **Volume POC** (amber) · "
+            "**Option OI walls** (Put=support / Call=resist) · volume · delivery · **Fut-OI** · "
             "**PCR** · return · cumulative. "
             "Fut-OI bars ka rang = buildup: 🟢 long buildup · 🩵 short covering · "
             "🔴 short buildup · 🟠 long unwinding. "
