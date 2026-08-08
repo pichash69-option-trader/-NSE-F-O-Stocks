@@ -870,9 +870,14 @@ elif section == "📉 Line chart":
             show_avg = st.checkbox("Average price line", value=False, key="lc_avg")
             show_dd = st.checkbox("Max-drawdown span", value=True, key="lc_dd")
             show_gap = st.checkbox("Gap + hi-volume markers", value=True, key="lc_gap")
+            show_mp = st.checkbox("Max-pain line (F&O)", value=True, key="lc_mp")
+            show_ca = st.checkbox("Corp-action lines", value=True, key="lc_ca")
+            show_ban = st.checkbox("F&O ban shading", value=True, key="lc_ban")
             st.caption("**Extra panes (below)**")
             show_vol = st.checkbox("Volume pane", value=True, key="lc_vol")
             show_deliv = st.checkbox("Delivery % pane", value=True, key="lc_deliv")
+            show_futoi = st.checkbox("Futures OI pane (buildup)", value=True, key="lc_futoi")
+            show_pcr = st.checkbox("PCR pane", value=False, key="lc_pcr")
             show_ret = st.checkbox("Daily return % pane", value=False, key="lc_ret")
             show_cum = st.checkbox("Cumulative return line", value=False, key="lc_cum")
         tf = tf or "50"
@@ -899,6 +904,28 @@ elif section == "📉 Line chart":
         srow = q("SELECT ann_volatility, sharpe, beta, max_drawdown, skew, "
                  "kurtosis, cagr, zscore, pct_rank_52w FROM stats "
                  "WHERE symbol=? ORDER BY date DESC LIMIT 1", (symbol,))
+
+        # --- Per-stock F&O daily (OI / change-OI / premium% / PCR) → align to chart ---
+        sd = stock_daily(symbol)
+        for _c in ("fut_oi", "fut_chg_oi", "prem_pct", "pcr"):
+            cv[_c] = (cv["date"].map(sd[_c]) if (not sd.empty and _c in sd.columns)
+                      else np.nan)
+
+        # --- Current max-pain strike (latest option day, near expiry) ---
+        mp_line = None
+        _od = q("SELECT MAX(date) d FROM options WHERE symbol=?", (symbol,))["d"].iloc[0]
+        if _od:
+            _ne = q("SELECT MIN(expiry) e FROM options WHERE symbol=? AND date=?",
+                    (symbol, _od))["e"].iloc[0]
+            if _ne:
+                mp_line = analysis.max_pain(symbol, _od, _ne)
+
+        # --- Events within the visible window: corp actions + F&O ban days ---
+        d0, d1 = cv["date"].iloc[0], cv["date"].iloc[-1]
+        ca_ev = q("SELECT ex_date, action_type FROM corp_actions WHERE symbol=? "
+                  "AND ex_date BETWEEN ? AND ? ORDER BY ex_date", (symbol, d0, d1))
+        ban_ev = q("SELECT date FROM secban WHERE symbol=? AND date BETWEEN ? AND ? "
+                   "ORDER BY date", (symbol, d0, d1))
 
         # --- Fill the top header + metrics + stat strip now that view is known ---
         with header_box:
@@ -938,8 +965,12 @@ elif section == "📉 Line chart":
         SPIKE = "#6c6c8a"
 
         # --- Dynamic panes: price (always, weight 3) + each extra pane (weight 1) ---
+        _has_oi = bool(cv["fut_oi"].notna().any())
+        _has_pcr = bool(cv["pcr"].notna().any())
         extras = ([("vol",)] if show_vol else []) + \
                  ([("deliv",)] if show_deliv else []) + \
+                 ([("futoi",)] if show_futoi and _has_oi else []) + \
+                 ([("pcr",)] if show_pcr and _has_pcr else []) + \
                  ([("ret",)] if show_ret else []) + \
                  ([("cum",)] if show_cum else [])
         extras = [e[0] for e in extras]
@@ -1037,6 +1068,36 @@ elif section == "📉 Line chart":
                 hovertemplate="<b>%{x}</b><br>Highest volume "
                               f"({_fmt(hv['volume'])})<extra></extra>"), row=1, col=1)
 
+        # --- Overlay: current max-pain strike (F&O writers' expiry magnet) ---
+        if show_mp and mp_line:
+            fig.add_hline(y=mp_line, line=dict(color="#a78bfa", width=1.4, dash="dashdot"),
+                          annotation_text=f"max pain ₹{mp_line:,.0f}",
+                          annotation_position="left", annotation_font_size=10,
+                          annotation_font_color="#a78bfa", row=1, col=1)
+
+        # --- Overlay: corporate-action ex-dates (vertical dotted lines) ---
+        if show_ca and not ca_ev.empty:
+            dset = list(cv["date"])
+            for ev in ca_ev.itertuples():
+                xd = (ev.ex_date if ev.ex_date in dset else
+                      next((d for d in reversed(dset) if d <= ev.ex_date), None))
+                if xd is None:
+                    continue
+                fig.add_vline(x=xd, line=dict(color="rgba(167,139,250,.5)", width=1, dash="dot"),
+                              annotation_text=(ev.action_type or "?")[:1].upper(),
+                              annotation_position="top", annotation_font_size=9,
+                              annotation_font_color="#a78bfa", row=1, col=1)
+
+        # --- Overlay: F&O ban days (red squares along the bottom of the price pane) ---
+        if show_ban and not ban_ev.empty:
+            bd = [d for d in ban_ev["date"] if d in set(cv["date"])]
+            if bd:
+                fig.add_trace(go.Scatter(
+                    x=bd, y=[p_lo] * len(bd), mode="markers", name="F&O ban",
+                    marker=dict(symbol="square", size=7, color="rgba(244,63,94,.85)"),
+                    hovertemplate="<b>%{x}</b><br>F&O BAN day (MWPL >95%)<extra></extra>"),
+                    row=1, col=1)
+
         # --- Volume pane (green up-day / red down-day) + avg-volume line ---
         if show_vol:
             vcol = [("rgba(16,185,129,.55)" if pd.notna(ch) and ch >= 0
@@ -1064,6 +1125,43 @@ elif section == "📉 Line chart":
                               annotation_text=f"avg {avg_del:.0f}%", annotation_position="right",
                               annotation_font_size=9, row=deliv_row, col=1)
             fig.update_yaxes(title_text="Del%", row=deliv_row, col=1, showgrid=False,
+                             zeroline=False, tickfont_size=10)
+
+        # --- Futures OI pane (bars coloured by buildup read) ---
+        if "futoi" in row_of:
+            fr = row_of["futoi"]
+
+            def _bu_color(ch, doi):
+                if pd.isna(ch) or pd.isna(doi):
+                    return "rgba(139,139,167,.5)"
+                if ch >= 0 and doi > 0:
+                    return "rgba(16,185,129,.75)"    # long buildup
+                if ch >= 0 and doi <= 0:
+                    return "rgba(45,212,191,.65)"    # short covering
+                if ch < 0 and doi > 0:
+                    return "rgba(244,63,94,.75)"     # short buildup
+                return "rgba(245,158,11,.65)"        # long unwinding
+            bcol = [_bu_color(c, o) for c, o in zip(cv["chg_pct"], cv["fut_chg_oi"])]
+            fig.add_trace(go.Bar(
+                x=cv["date"], y=cv["fut_oi"], name="Fut OI", marker_color=bcol,
+                marker_line_width=0,
+                hovertemplate="<b>%{x}</b><br>Futures OI %{y:,.0f}<extra></extra>"),
+                row=fr, col=1)
+            fig.update_yaxes(title_text="Fut OI", row=fr, col=1, showgrid=False,
+                             zeroline=False, tickfont_size=10)
+
+        # --- PCR pane (put/call OI ratio, 1.0 reference) ---
+        if "pcr" in row_of:
+            pr = row_of["pcr"]
+            fig.add_trace(go.Scatter(
+                x=cv["date"], y=cv["pcr"], name="PCR", mode="lines",
+                line=dict(color="#c084fc", width=1.8),
+                hovertemplate="<b>%{x}</b><br>PCR %{y:.2f}<extra></extra>"),
+                row=pr, col=1)
+            fig.add_hline(y=1.0, line=dict(color="#8b8ba7", width=1, dash="dot"),
+                          annotation_text="1.0", annotation_position="right",
+                          annotation_font_size=9, row=pr, col=1)
+            fig.update_yaxes(title_text="PCR", row=pr, col=1, showgrid=False,
                              zeroline=False, tickfont_size=10)
 
         # --- Daily return % pane (green up-day / red down-day bars) ---
@@ -1129,10 +1227,13 @@ elif section == "📉 Line chart":
         st.plotly_chart(fig, width="stretch",
                         config={"scrollZoom": True, "displaylogo": False,
                                 "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
-        st.caption("📅 Timeframe/type upar · ⚙️ Overlays me bands / hi-lo / drawdown / "
-                   "gap-markers / volume / delivery / return / cumulative on-off karo · "
-                   "zoom = drag/scroll · double-click = reset. "
-                   "Sab pure statistics — koi technical indicator nahi (project rule).")
+        st.caption(
+            "⚙️ Overlays me sab on-off: σ-bands · hi-lo · drawdown · gap · **max-pain** · "
+            "**corp-action lines** · **ban shading** · volume · delivery · **Fut-OI** · "
+            "**PCR** · return · cumulative. "
+            "Fut-OI bars ka rang = buildup: 🟢 long buildup · 🩵 short covering · "
+            "🔴 short buildup · 🟠 long unwinding. "
+            "Sab pure data/statistics — koi technical indicator nahi (project rule).")
 
 # =========================================================================== #
 # TAB — Analysis (one stock, day-by-day, with plain-language interpretation)
