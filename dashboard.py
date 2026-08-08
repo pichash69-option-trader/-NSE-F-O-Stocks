@@ -855,7 +855,7 @@ elif section == "📉 Line chart":
         # toolbar has told us the timeframe (metrics depend on the chosen range).
         header_box = st.container()
 
-        # --- Chart toolbar (right above the chart): timeframe / type / volume ---
+        # --- Chart toolbar (right above the chart): timeframe / type / overlays ---
         tb1, tb2, tb3 = st.columns([3, 2, 2])
         tf = tb1.segmented_control(
             "Timeframe", ["20", "50", "100", "250", "All"], default="50",
@@ -863,36 +863,95 @@ elif section == "📉 Line chart":
         ctype = tb2.segmented_control(
             "Chart type", ["Line", "Candle"], default="Line",
             key="lc_type", label_visibility="collapsed")
-        show_vol = tb3.toggle("Volume pane", value=True, key="lc_vol")
+        with tb3.popover("⚙️ Overlays", use_container_width=True):
+            st.caption("**Price pane overlays**")
+            show_bands = st.checkbox("Mean ±σ bands (z-score)", value=True, key="lc_bands")
+            show_hilo = st.checkbox("High / Low levels", value=True, key="lc_hilo")
+            show_avg = st.checkbox("Average price line", value=False, key="lc_avg")
+            show_dd = st.checkbox("Max-drawdown span", value=True, key="lc_dd")
+            show_gap = st.checkbox("Gap + hi-volume markers", value=True, key="lc_gap")
+            st.caption("**Extra panes (below)**")
+            show_vol = st.checkbox("Volume pane", value=True, key="lc_vol")
+            show_deliv = st.checkbox("Delivery % pane", value=True, key="lc_deliv")
+            show_ret = st.checkbox("Daily return % pane", value=False, key="lc_ret")
+            show_cum = st.checkbox("Cumulative return line", value=False, key="lc_cum")
         tf = tf or "50"
         ctype = ctype or "Line"
 
         view = hist if tf == "All" else hist.tail(int(tf))
         latest = view.iloc[-1]
+        cv = view.copy()
 
-        # --- Fill the top header + metrics now that `view` is known ---
+        # --- Window statistics (all pure math over the visible range) ---
+        mean_p = float(cv["close"].mean())
+        sd_p = float(cv["close"].std() or 0.0)
+        z_now = (latest["close"] - mean_p) / sd_p if sd_p else 0.0
+        avg_vol = float(cv["volume"].mean())
+        avg_del = float(cv["deliv_pct"].dropna().mean()) if cv["deliv_pct"].notna().any() else None
+        avg_rng = float(((cv["high"] - cv["low"]) / cv["close"] * 100).mean())
+        avg_to = float(cv["turnover"].mean())
+        p_hi, p_lo = float(cv["high"].max()), float(cv["low"].min())
+        # 52-week (≈252 trading days) high/low from the FULL history
+        w = hist.tail(252)
+        hi52, lo52 = float(w["high"].max()), float(w["low"].min())
+
+        # --- Full-history stats (from the computed stats table) ---
+        srow = q("SELECT ann_volatility, sharpe, beta, max_drawdown, skew, "
+                 "kurtosis, cagr, zscore, pct_rank_52w FROM stats "
+                 "WHERE symbol=? ORDER BY date DESC LIMIT 1", (symbol,))
+
+        # --- Fill the top header + metrics + stat strip now that view is known ---
         with header_box:
             st.subheader(f"{symbol} — chart")
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("Close", f"{latest['close']:.2f}", f"{latest['chg_pct']:+.2f}%")
-            c2.metric("High (range)", f"{view['high'].max():.2f}")
-            c3.metric("Low (range)", f"{view['low'].min():.2f}")
+            c2.metric("High (range)", f"{p_hi:.2f}")
+            c3.metric("Low (range)", f"{p_lo:.2f}")
             c4.metric("Din (range me)", f"{len(view)}")
 
-        cv = view.copy()
+            # Stat strip — full-history stats (pure math, no indicators)
+            if not srow.empty:
+                s = srow.iloc[0]
+                def _sv(x, mul=1, suf="", dp=2):
+                    return f"{x*mul:.{dp}f}{suf}" if pd.notna(x) else "—"
+                st.caption(
+                    "📊 **Stats:** "
+                    f"Ann.Vol {_sv(s['ann_volatility'],100,'%',0)} · "
+                    f"Sharpe {_sv(s['sharpe'])} · "
+                    f"Beta {_sv(s['beta'])} · "
+                    f"MaxDD {_sv(s['max_drawdown'],100,'%',0)} · "
+                    f"Skew {_sv(s['skew'])} · Kurt {_sv(s['kurtosis'])} · "
+                    f"CAGR {_sv(s['cagr'],100,'%',0)} · "
+                    f"z {_sv(s['zscore'])} · 52w %ile {_sv(s['pct_rank_52w'],1,'',0)}")
+            # Window averages — "data ka average"
+            st.caption(
+                f"📈 **{tf}-din average:** Close ₹{mean_p:,.2f} · "
+                f"Vol {_fmt(avg_vol)} · "
+                + (f"Delivery {avg_del:.1f}% · " if avg_del is not None else "")
+                + f"Range {avg_rng:.2f}% · Turnover ₹{avg_to/1e7:,.1f}Cr · "
+                f"aaj z-score {z_now:+.2f}")
+
         UP, DN = "#10b981", "#f43f5e"
         up = latest["close"] >= view.iloc[0]["close"]
         color = UP if up else DN
         GRID = "rgba(255,255,255,.05)"
         SPIKE = "#6c6c8a"
 
-        # Two stacked panes (price on top, volume below) sharing the x-axis;
-        # or a single price pane when the volume toggle is off.
-        if show_vol:
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
-                                vertical_spacing=0.04, row_heights=[0.76, 0.24])
-        else:
-            fig = make_subplots(rows=1, cols=1)
+        # --- Dynamic panes: price (always, weight 3) + each extra pane (weight 1) ---
+        extras = ([("vol",)] if show_vol else []) + \
+                 ([("deliv",)] if show_deliv else []) + \
+                 ([("ret",)] if show_ret else []) + \
+                 ([("cum",)] if show_cum else [])
+        extras = [e[0] for e in extras]
+        n_extra = len(extras)
+        weights = [3.0] + [1.0] * n_extra
+        heights = [x / sum(weights) for x in weights]
+        fig = make_subplots(rows=1 + n_extra, cols=1, shared_xaxes=True,
+                            vertical_spacing=0.045, row_heights=heights)
+        row_of = {name: 2 + i for i, name in enumerate(extras)}   # pane -> row
+        vol_row = row_of.get("vol")
+        deliv_row = row_of.get("deliv")
+        bottom_row = 1 + n_extra
 
         # --- Price pane: the trace depends on the chosen chart type ---
         if ctype == "Candle":
@@ -912,7 +971,73 @@ elif section == "📉 Line chart":
                 hovertemplate="<b>%{x}</b><br>Close ₹%{y:.2f}<extra></extra>"),
                 row=1, col=1)
 
-        # --- Volume pane (own row, green up-day / red down-day) ---
+        # --- Overlay: mean ±1σ / ±2σ bands (z-score context, not a moving avg) ---
+        if show_bands and sd_p:
+            fig.add_hline(y=mean_p, line=dict(color="#8b8ba7", width=1, dash="solid"),
+                          annotation_text="mean", annotation_position="right",
+                          annotation_font_size=10, row=1, col=1)
+            for k, dash in [(1, "dash"), (2, "dot")]:
+                for sign in (+1, -1):
+                    yv = mean_p + sign * k * sd_p
+                    fig.add_hline(y=yv, line=dict(color="rgba(139,139,167,.45)",
+                                  width=1, dash=dash), row=1, col=1,
+                                  annotation_text=f"{'+' if sign>0 else '−'}{k}σ",
+                                  annotation_position="right", annotation_font_size=9)
+
+        # --- Overlay: period + 52-week high/low reference levels ---
+        if show_hilo:
+            fig.add_hline(y=hi52, line=dict(color="rgba(16,185,129,.5)", width=1, dash="dash"),
+                          annotation_text="52w High", annotation_position="left",
+                          annotation_font_size=9, row=1, col=1)
+            fig.add_hline(y=lo52, line=dict(color="rgba(244,63,94,.5)", width=1, dash="dash"),
+                          annotation_text="52w Low", annotation_position="left",
+                          annotation_font_size=9, row=1, col=1)
+
+        # --- Overlay: flat average-price line over the window (optional) ---
+        if show_avg:
+            fig.add_hline(y=mean_p, line=dict(color="#f59e0b", width=1.4, dash="longdash"),
+                          annotation_text=f"avg ₹{mean_p:,.0f}", annotation_position="right",
+                          annotation_font_size=10, row=1, col=1)
+
+        # --- Overlay: max-drawdown span (biggest peak->trough in the window) ---
+        if show_dd and len(cv) > 2:
+            cls = cv["close"].reset_index(drop=True)
+            runmax = cls.cummax()
+            ddser = cls / runmax - 1.0
+            t_i = int(ddser.idxmin())                 # trough position
+            p_i = int(cls.iloc[:t_i + 1].idxmax())    # the peak feeding it
+            dd_pct = float(ddser.iloc[t_i] * 100)
+            if dd_pct < -0.5 and p_i < t_i:
+                fig.add_vrect(
+                    x0=cv["date"].iloc[p_i], x1=cv["date"].iloc[t_i],
+                    fillcolor="rgba(244,63,94,.10)", line_width=0, row=1, col=1,
+                    annotation_text=f"max DD {dd_pct:.1f}%", annotation_position="top left",
+                    annotation_font_size=10, annotation_font_color="#f87171")
+
+        # --- Overlay: gap up/down + highest-volume markers ---
+        if show_gap:
+            prev_c = cv["close"].shift(1)
+            gap = (cv["open"] / prev_c - 1.0) * 100
+            gu = cv[gap >= 2.0]
+            gd = cv[gap <= -2.0]
+            if not gu.empty:
+                fig.add_trace(go.Scatter(
+                    x=gu["date"], y=gu["high"] * 1.012, mode="markers", name="Gap up",
+                    marker=dict(symbol="triangle-up", size=10, color=UP),
+                    hovertemplate="<b>%{x}</b><br>Gap-up<extra></extra>"), row=1, col=1)
+            if not gd.empty:
+                fig.add_trace(go.Scatter(
+                    x=gd["date"], y=gd["low"] * 0.988, mode="markers", name="Gap down",
+                    marker=dict(symbol="triangle-down", size=10, color=DN),
+                    hovertemplate="<b>%{x}</b><br>Gap-down<extra></extra>"), row=1, col=1)
+            hv = cv.loc[cv["volume"].idxmax()]
+            fig.add_trace(go.Scatter(
+                x=[hv["date"]], y=[hv["high"] * 1.02], mode="markers", name="Peak vol",
+                marker=dict(symbol="star", size=13, color="#f59e0b"),
+                hovertemplate="<b>%{x}</b><br>Highest volume "
+                              f"({_fmt(hv['volume'])})<extra></extra>"), row=1, col=1)
+
+        # --- Volume pane (green up-day / red down-day) + avg-volume line ---
         if show_vol:
             vcol = [("rgba(16,185,129,.55)" if pd.notna(ch) and ch >= 0
                      else "rgba(244,63,94,.55)") for ch in cv["chg_pct"]]
@@ -920,13 +1045,59 @@ elif section == "📉 Line chart":
                 x=cv["date"], y=cv["volume"], name="Volume",
                 marker_color=vcol, marker_line_width=0,
                 hovertemplate="<b>%{x}</b><br>Volume %{y:,.0f}<extra></extra>"),
-                row=2, col=1)
-            fig.update_yaxes(title_text="Vol", row=2, col=1, showgrid=False,
+                row=vol_row, col=1)
+            fig.add_hline(y=avg_vol, line=dict(color="#8b8ba7", width=1, dash="dot"),
+                          annotation_text="avg", annotation_position="right",
+                          annotation_font_size=9, row=vol_row, col=1)
+            fig.update_yaxes(title_text="Vol", row=vol_row, col=1, showgrid=False,
+                             zeroline=False, tickfont_size=10)
+
+        # --- Delivery % pane (conviction — real buying vs speculation) + avg line ---
+        if show_deliv:
+            fig.add_trace(go.Scatter(
+                x=cv["date"], y=cv["deliv_pct"], name="Delivery %", mode="lines",
+                line=dict(color="#38bdf8", width=1.8),
+                hovertemplate="<b>%{x}</b><br>Delivery %{y:.1f}%<extra></extra>"),
+                row=deliv_row, col=1)
+            if avg_del is not None:
+                fig.add_hline(y=avg_del, line=dict(color="#8b8ba7", width=1, dash="dot"),
+                              annotation_text=f"avg {avg_del:.0f}%", annotation_position="right",
+                              annotation_font_size=9, row=deliv_row, col=1)
+            fig.update_yaxes(title_text="Del%", row=deliv_row, col=1, showgrid=False,
+                             zeroline=False, tickfont_size=10)
+
+        # --- Daily return % pane (green up-day / red down-day bars) ---
+        if show_ret:
+            rr = row_of["ret"]
+            rcol = [(UP if pd.notna(ch) and ch >= 0 else DN) for ch in cv["chg_pct"]]
+            fig.add_trace(go.Bar(
+                x=cv["date"], y=cv["chg_pct"], name="Daily %",
+                marker_color=rcol, marker_line_width=0,
+                hovertemplate="<b>%{x}</b><br>Return %{y:+.2f}%<extra></extra>"),
+                row=rr, col=1)
+            fig.add_hline(y=0, line=dict(color="#8b8ba7", width=1), row=rr, col=1)
+            fig.update_yaxes(title_text="Ret%", row=rr, col=1, showgrid=False,
+                             zeroline=False, tickfont_size=10)
+
+        # --- Cumulative return line (rebased to 0% at window start) ---
+        if show_cum:
+            rc = row_of["cum"]
+            cumret = (cv["close"] / float(cv["close"].iloc[0]) - 1.0) * 100
+            cend = float(cumret.iloc[-1])
+            cline = UP if cend >= 0 else DN
+            fig.add_trace(go.Scatter(
+                x=cv["date"], y=cumret, name="Cum %", mode="lines",
+                line=dict(color=cline, width=1.8), fill="tozeroy",
+                fillcolor=("rgba(16,185,129,.08)" if cend >= 0 else "rgba(244,63,94,.08)"),
+                hovertemplate="<b>%{x}</b><br>Cum return %{y:+.2f}%<extra></extra>"),
+                row=rc, col=1)
+            fig.add_hline(y=0, line=dict(color="#8b8ba7", width=1), row=rc, col=1)
+            fig.update_yaxes(title_text="Cum%", row=rc, col=1, showgrid=False,
                              zeroline=False, tickfont_size=10)
 
         # --- Layout: dark, subtle grid, crosshair spikes, unified hover ---
         fig.update_layout(
-            height=560, margin=dict(l=6, r=6, t=14, b=0),
+            height=520 + 90 * n_extra, margin=dict(l=6, r=6, t=14, b=0),
             template="plotly_dark",
             paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
             font=dict(color="#b8b8cc", size=12),
@@ -939,25 +1110,29 @@ elif section == "📉 Line chart":
                          spikemode="across", spikethickness=1, spikedash="dot",
                          spikecolor=SPIKE, showticklabels=False)
         # Only label the bottom-most axis (shared x); thin + angle the ticks.
-        bottom_row = 2 if show_vol else 1
         fig.update_xaxes(showticklabels=True, tickmode="array",
                          tickvals=list(cv["date"])[::step], tickangle=-30,
                          tickfont_size=10, row=bottom_row, col=1)
         # Tighten the price axis to the data (a tozeroy fill would otherwise pull
-        # the axis toward 0 and squash the action into the top third).
-        lo, hi = float(cv["low"].min()), float(cv["high"].max())
-        pad = (hi - lo) * 0.06 or 1.0
+        # the axis toward 0). Widen to include the ±2σ bands when shown so they
+        # stay visible.
+        axis_lo, axis_hi = p_lo, p_hi
+        if show_bands and sd_p:
+            axis_lo = min(axis_lo, mean_p - 2 * sd_p)
+            axis_hi = max(axis_hi, mean_p + 2 * sd_p)
+        pad = (axis_hi - axis_lo) * 0.06 or 1.0
         fig.update_yaxes(title_text="Price ₹", row=1, col=1, side="right",
-                         range=[lo - pad, hi + pad],
+                         range=[axis_lo - pad, axis_hi + pad],
                          gridcolor=GRID, zeroline=False, showspikes=True,
                          spikemode="across", spikethickness=1, spikedash="dot",
                          spikecolor=SPIKE)
         st.plotly_chart(fig, width="stretch",
                         config={"scrollZoom": True, "displaylogo": False,
                                 "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
-        st.caption("📅 Timeframe/type upar se · zoom = drag/scroll · double-click = reset · "
-                   "🖱️ crosshair on hover · modebar (pan / box-zoom / PNG). "
-                   "Chart TOOLS only — koi indicator nahi (project rule).")
+        st.caption("📅 Timeframe/type upar · ⚙️ Overlays me bands / hi-lo / drawdown / "
+                   "gap-markers / volume / delivery / return / cumulative on-off karo · "
+                   "zoom = drag/scroll · double-click = reset. "
+                   "Sab pure statistics — koi technical indicator nahi (project rule).")
 
 # =========================================================================== #
 # TAB — Analysis (one stock, day-by-day, with plain-language interpretation)
