@@ -21,6 +21,7 @@ from plotly.subplots import make_subplots
 import db
 import analysis
 import charts
+import backtest
 import sectors
 from render import (  # presentation layer (HTML tables + CSS)
     _fmt, CHAIN_LEGEND, _seg_metrics,
@@ -533,6 +534,14 @@ def cached_sum_chain(symbol, date):
     return analysis.sum_chain(symbol, date)
 
 
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_backtest(strategy):
+    """Run + cache a full-universe backtest (heavy: ~1-2 min first time)."""
+    if strategy == "Momentum buying":
+        return backtest.run()
+    return None
+
+
 @st.cache_data(ttl=300)
 def nifty_daily():
     """Nifty 50 daily % change, indexed by date (for relative-strength reads)."""
@@ -693,7 +702,7 @@ def _trend5(dd, key, sel, n=5):
 GROUPS = {
     "📈 Per-stock": ["📈 Equity / Cash", "📉 Line chart", "🔬 Analysis", "🔮 Futures", "⛓️ Options"],
     "🌐 Market-wide": ["🏦 Participant", "🌐 Market"],
-    "📊 All-stocks": ["📊 Math stats", "⚖️ Compare", "🩺 Data health"],
+    "📊 All-stocks": ["📊 Math stats", "⚖️ Compare", "🎯 Backtest", "🩺 Data health"],
 }
 GROUP_KEYS = list(GROUPS)
 
@@ -2161,6 +2170,82 @@ elif section == "⚖️ Compare":
                     .set_index("symbol").reindex(picks))
         st.markdown("#### 📊 Side-by-side stats")
         st.markdown(render_compare(comp), unsafe_allow_html=True)
+
+
+# =========================================================================== #
+# TAB — Backtest (user-defined option strategies, across all stocks)
+# =========================================================================== #
+elif section == "🎯 Backtest":
+    st.subheader("🎯 Strategy backtest")
+    strat = st.selectbox("Strategy", ["Momentum buying"], key="bt_strat")
+    st.caption("Long strangle (OTM+3 CE+PE) on a multi-factor momentum burst · "
+               "trailing +100%/−30% · loss −50% · time min(10d, expiry−5). "
+               "Full rules: **strategy.md**. ⚠️ Research/education only — daily (EOD) "
+               "data, **koi trading advice nahi**.")
+
+    if st.button("▶️ Run backtest (all ~210 stocks · pehli baar ~1–2 min)", key="bt_run"):
+        st.session_state["bt_done"] = True
+    if not st.session_state.get("bt_done"):
+        st.info("Upar **Run backtest** dabao — sab F&O stocks pe strategy chalegi "
+                "(result cache ho jayega, dobara instant).")
+    else:
+        with st.spinner("Backtest chal raha hai (sab stocks)…"):
+            trades, per_stock, overall, eq = cached_backtest(strat)
+
+        if trades is None or trades.empty:
+            st.warning("Koi trade nahi bana (data adhoora ho sakta hai — options build "
+                       "poora hone ke baad phir chalao).")
+        else:
+            # --- Overall summary cards ---
+            st.markdown(f"#### 📊 Overall — *{strat}*")
+            m = st.columns(6)
+            m[0].metric("Trades", f"{overall['trades']:,}")
+            m[1].metric("Stocks", overall["stocks"])
+            m[2].metric("Win rate", f"{overall['win_rate']}%")
+            m[3].metric("Total (pts)", f"{overall['total_pts']:,.0f}")
+            m[4].metric("Avg P&L", f"{overall['avg_pnl_pct']}%")
+            m[5].metric("Best / Worst", f"{overall['best_pct']:.0f}% / {overall['worst_pct']:.0f}%")
+            st.caption("Exit breakdown: " + " · ".join(
+                f"**{k}** {v}" for k, v in overall["exits"].items())
+                + ". P&L **premium-points (₹/share)** aur **%** me — lot-size independent "
+                "(×lot×2 se rupee P&L).")
+
+            # --- Combined equity curve (cumulative premium points) ---
+            st.markdown("**📈 Equity curve** — cumulative P&L (premium points, exit-date wise)")
+            st.line_chart(eq.set_index("exit_date")["cum_pts"], height=260)
+
+            # --- Per-stock drill-down ---
+            st.markdown("#### 🔎 Per-stock")
+            syms = per_stock["symbol"].tolist()
+            sel = st.selectbox("Stock", syms, key="bt_sym")
+            srow = per_stock[per_stock["symbol"] == sel].iloc[0]
+            c = st.columns(5)
+            c[0].metric("Trades", int(srow["trades"]))
+            c[1].metric("Win rate", f"{srow['win_rate']}%")
+            c[2].metric("Total (pts)", f"{srow['total_pts']:,.0f}")
+            c[3].metric("Avg P&L", f"{srow['avg_pnl_pct']}%")
+            c[4].metric("Best / Worst", f"{srow['best_pct']:.0f}% / {srow['worst_pct']:.0f}%")
+            st_t = trades[trades["symbol"] == sel].copy()
+            steq = st_t.sort_values("exit_date")
+            steq["cum_pts"] = steq["pnl_points"].cumsum()
+            st.line_chart(steq.set_index("exit_date")["cum_pts"], height=200)
+            st.caption("Trade log (is stock ke sab trades):")
+            st.dataframe(st_t[["entry_date", "exit_date", "expiry", "ce_strike", "pe_strike",
+                               "entry_prem", "exit_prem", "pnl_pct", "days_held", "exit_reason"]]
+                         .rename(columns={"entry_date": "Entry", "exit_date": "Exit",
+                                          "expiry": "Expiry", "ce_strike": "CE", "pe_strike": "PE",
+                                          "entry_prem": "In₹", "exit_prem": "Out₹",
+                                          "pnl_pct": "P&L%", "days_held": "Days",
+                                          "exit_reason": "Why"}),
+                         hide_index=True, width="stretch")
+
+            # --- All-stocks sortable table ---
+            st.markdown("#### 🗂️ All stocks (sortable — column header click karo)")
+            st.dataframe(per_stock.rename(columns={
+                "symbol": "Stock", "trades": "Trades", "win_rate": "Win%",
+                "total_pts": "Total pts", "avg_pnl_pct": "Avg%",
+                "best_pct": "Best%", "worst_pct": "Worst%"}),
+                hide_index=True, width="stretch", height=420)
 
 
 # =========================================================================== #
