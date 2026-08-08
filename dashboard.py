@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 import db
 import analysis
@@ -676,7 +677,7 @@ def _trend5(dd, key, sel, n=5):
 # Sidebar — QuantCalc-style logo + navigation menu + stock controls
 # --------------------------------------------------------------------------- #
 GROUPS = {
-    "📈 Per-stock": ["📈 Equity / Cash", "🔬 Analysis", "🔮 Futures", "⛓️ Options"],
+    "📈 Per-stock": ["📈 Equity / Cash", "📉 Line chart", "🔬 Analysis", "🔮 Futures", "⛓️ Options"],
     "🌐 Market-wide": ["🏦 Participant", "🌐 Market"],
     "📊 All-stocks": ["📊 Math stats", "⚖️ Compare", "🩺 Data health"],
 }
@@ -840,6 +841,58 @@ if section == "📈 Equity / Cash":
         else:
             st.caption("💼 Is stock ke koi corporate action record me nahi (is period me).")
         st.caption("Futures 🔮 aur Option chain ⛓️ sidebar ke alag sections me hain.")
+
+# =========================================================================== #
+# TAB — Line chart (one stock: close-price line + volume bars)
+# =========================================================================== #
+elif section == "📉 Line chart":
+    hist = stock_history(symbol)
+    if hist.empty:
+        st.warning(f"{symbol}: koi data nahi. Pehle fetch_data / fetch_fno chalao.")
+    else:
+        view = hist if lookback == "All" else hist.tail(int(lookback))
+        latest = view.iloc[-1]
+
+        st.subheader(f"{symbol} — line chart")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Close", f"{latest['close']:.2f}", f"{latest['chg_pct']:+.2f}%")
+        c2.metric("Volume", f"{latest['volume']:,.0f}")
+        c3.metric("Din (range me)", f"{len(view)}")
+
+        cv = view.copy()
+        line_up = latest["close"] >= view.iloc[0]["close"]
+        line_color = "#10b981" if line_up else "#f43f5e"
+
+        fig = make_subplots(specs=[[{"secondary_y": True}]])
+        # Volume bars (background, secondary axis) — up/down day coloured
+        vol_colors = ["#10b981" if pd.notna(ch) and ch >= 0 else "#f43f5e"
+                      for ch in cv["chg_pct"]]
+        fig.add_trace(go.Bar(
+            x=cv["date"], y=cv["volume"], name="Volume",
+            marker_color=vol_colors, marker_line_width=0, opacity=0.35,
+            hovertemplate="%{x}<br>Volume %{y:,.0f}<extra></extra>"),
+            secondary_y=True)
+        # Close price line (foreground, primary axis)
+        fig.add_trace(go.Scatter(
+            x=cv["date"], y=cv["close"], name="Close", mode="lines",
+            line=dict(color=line_color, width=2),
+            hovertemplate="%{x}<br>Close %{y:.2f}<extra></extra>"),
+            secondary_y=False)
+        fig.update_layout(
+            height=420, margin=dict(l=0, r=0, t=10, b=0),
+            hovermode="x unified", showlegend=False, bargap=0.15)
+        step = max(1, len(cv) // 10)
+        fig.update_xaxes(type="category", tickmode="array",
+                         tickvals=list(cv["date"])[::step])
+        fig.update_yaxes(title_text="Price", secondary_y=False)
+        # Give volume its own compressed band at the bottom so bars don't
+        # overpower the price line.
+        vmax = float(cv["volume"].max() or 1)
+        fig.update_yaxes(title_text="Volume", secondary_y=True,
+                         range=[0, vmax * 3.5], showgrid=False)
+        st.plotly_chart(fig, width="stretch")
+        st.caption("🟢/🔴 line = period ka net up/down · bars = us din ka volume "
+                   "(green = up day, red = down day). Aur kya add karna hai batao.")
 
 # =========================================================================== #
 # TAB — Analysis (one stock, day-by-day, with plain-language interpretation)
