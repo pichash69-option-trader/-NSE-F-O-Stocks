@@ -20,6 +20,7 @@ from plotly.subplots import make_subplots
 
 import db
 import analysis
+import charts
 import sectors
 from render import (  # presentation layer (HTML tables + CSS)
     _fmt, CHAIN_LEGEND, _seg_metrics,
@@ -520,6 +521,19 @@ def stock_daily(symbol):
 
 
 @st.cache_data(ttl=300)
+def cached_max_pain(symbol, date, expiry):
+    """Cached wrapper — max_pain hits the 17M-row options table + an O(strikes²)
+    loop, so cache it (else every rerun/toggle recomputes)."""
+    return analysis.max_pain(symbol, date, expiry)
+
+
+@st.cache_data(ttl=300)
+def cached_sum_chain(symbol, date):
+    """Cached wrapper — sum_chain reads all strikes/expiries for a day."""
+    return analysis.sum_chain(symbol, date)
+
+
+@st.cache_data(ttl=300)
 def nifty_daily():
     """Nifty 50 daily % change, indexed by date (for relative-strength reads)."""
     ix = q("SELECT date, chg_pct FROM indices WHERE name='Nifty 50' ORDER BY date")
@@ -924,7 +938,7 @@ elif section == "📉 Line chart":
             _ne = q("SELECT MIN(expiry) e FROM options WHERE symbol=? AND date=?",
                     (symbol, _od))["e"].iloc[0]
             if _ne:
-                mp_line = analysis.max_pain(symbol, _od, _ne)
+                mp_line = cached_max_pain(symbol, _od, _ne)
 
         # --- Events within the visible window: corp actions · ban · deals · short ---
         d0, d1 = cv["date"].iloc[0], cv["date"].iloc[-1]
@@ -1120,26 +1134,8 @@ elif section == "📉 Line chart":
 
         # --- S/R 1: Swing high/low pivots (recent local highs/lows, clustered) ---
         if show_sr and len(cv) >= 7:
-            k = 3
-            hh, ll, nn = cv["high"].values, cv["low"].values, len(cv)
-            sw_hi = [float(hh[i]) for i in range(k, nn - k)
-                     if hh[i] == max(hh[i - k:i + k + 1])]
-            sw_lo = [float(ll[i]) for i in range(k, nn - k)
-                     if ll[i] == min(ll[i - k:i + k + 1])]
-
-            def _cluster(vals, tol=0.008):
-                out = []
-                for v in sorted(vals):
-                    if out and abs(v - out[-1][0]) / v <= tol:
-                        m, c = out[-1]; out[-1] = ((m * c + v) / (c + 1), c + 1)
-                    else:
-                        out.append((v, 1))
-                return out
-            cur = float(latest["close"])
-            res = sorted([(l, c) for l, c in _cluster(sw_hi) if l > cur],
-                         key=lambda t: t[0])[:2]                 # nearest 2 above
-            sup = sorted([(l, c) for l, c in _cluster(sw_lo) if l < cur],
-                         key=lambda t: -t[0])[:2]                # nearest 2 below
+            res, sup = charts.swing_levels(cv["high"].values, cv["low"].values,
+                                           latest["close"])
             for lvl, c in res:
                 fig.add_hline(y=lvl, line=dict(color="rgba(244,63,94,.5)", width=1, dash="dash"),
                               annotation_text=f"R {lvl:,.0f}" + (f"·{c}x" if c > 1 else ""),
@@ -1153,24 +1149,10 @@ elif section == "📉 Line chart":
 
         # --- S/R 2: Volume-profile POC + 70% value area (volume-by-price) ---
         if show_poc and len(cv) >= 5:
-            nb = 24
-            edges = np.linspace(p_lo, p_hi, nb + 1)
-            centers = (edges[:-1] + edges[1:]) / 2
-            vp = np.zeros(nb)
-            for lo_i, hi_i, v in zip(cv["low"].values, cv["high"].values, cv["volume"].values):
-                if not (np.isfinite(lo_i) and np.isfinite(hi_i) and np.isfinite(v)) or hi_i <= lo_i:
-                    continue
-                b0 = max(0, min(nb - 1, int(np.searchsorted(edges, lo_i) - 1)))
-                b1 = max(0, min(nb - 1, int(np.searchsorted(edges, hi_i) - 1)))
-                vp[b0:b1 + 1] += v / (b1 - b0 + 1)
-            if vp.sum() > 0:
-                poc = float(centers[int(vp.argmax())])
-                cum, total, sel = 0.0, vp.sum(), set()
-                for b in sorted(range(nb), key=lambda b: -vp[b]):
-                    sel.add(b); cum += vp[b]
-                    if cum >= 0.70 * total:
-                        break
-                va_lo, va_hi = float(edges[min(sel)]), float(edges[max(sel) + 1])
+            _vp = charts.volume_profile(cv["low"].values, cv["high"].values,
+                                        cv["volume"].values, p_lo, p_hi)
+            if _vp:
+                poc, va_lo, va_hi = _vp
                 fig.add_hrect(y0=va_lo, y1=va_hi, fillcolor="rgba(245,158,11,.07)",
                               line_width=0, layer="below", row=1, col=1)
                 fig.add_hline(y=poc, line=dict(color="#f59e0b", width=1.6),
@@ -1182,7 +1164,7 @@ elif section == "📉 Line chart":
         #     resistances. OI summed across ALL expiries via sum_chain. Rank 1
         #     is bold/opaque, ranks 2-3 thinner/fainter. ---
         if show_oiwall and _od:
-            sc = analysis.sum_chain(symbol, _od)
+            sc = cached_sum_chain(symbol, _od)
             if not sc.empty:
                 def _walls(col):
                     if col not in sc.columns:
@@ -1353,17 +1335,8 @@ elif section == "📉 Line chart":
         # se upar hai ya neeche (activity vs normal). Price ka MA nahi (rule).
         # Full history se compute hota hai — chart timeframe se independent.
         # ------------------------------------------------------------------- #
-        def _mom(series):
-            """(today, avg7, avg20) using the PRIOR 7/20 days (today excluded)."""
-            if series is None:
-                return None
-            s = series.dropna()
-            if len(s) < 8:
-                return None
-            today = float(s.iloc[-1])
-            a7 = float(s.iloc[-8:-1].mean())
-            a20 = float(s.iloc[-21:-1].mean()) if len(s) >= 21 else float(s.iloc[:-1].mean())
-            return today, a7, a20
+        def _mom(series):    # today vs prior 7/20-day average (charts.trailing_read)
+            return None if series is None else charts.trailing_read(series)
 
         if not sd.empty:
             rng_s = (sd["high"] - sd["low"]) / sd["prev_close"] * 100
@@ -1493,7 +1466,7 @@ elif section == "🔬 Analysis":
         savg = _srow["avg_ret"].iloc[0] if not _srow.empty else np.nan
         _ne = q("SELECT MIN(expiry) e FROM options WHERE symbol=? AND date=?",
                 (symbol, sel))["e"].iloc[0]
-        mp = analysis.max_pain(symbol, sel, _ne) if _ne else None
+        mp = cached_max_pain(symbol, sel, _ne) if _ne else None
 
         reads = [
             ("Price", f"{row['close']:,.1f} ({schg:+.2f}%)"
@@ -1716,7 +1689,7 @@ elif section == "⛓️ Options":
                             "AND expiry=? GROUP BY opt_type", (symbol, odate, e))
                     dct = dict(zip(ech["opt_type"], ech["oi"]))
                     pcr_e = dct.get("PE", 0) / dct.get("CE", 1) if dct.get("CE") else float("nan")
-                    mp = analysis.max_pain(symbol, odate, e)
+                    mp = cached_max_pain(symbol, odate, e)
                     mp_rows.append({"Expiry": e, "Max pain": f"{mp:,.0f}" if mp else "—",
                                     "PCR": round(pcr_e, 2)})
                 st.markdown("**Max pain + PCR (per expiry):**")
@@ -1746,7 +1719,7 @@ elif section == "⛓️ Options":
 
         # SUM CHAIN (upar) — Sensibull style
         st.markdown("**Σ SUM CHAIN — teeno expiry ka total (strike-wise)**")
-        sc = analysis.sum_chain(symbol, odate)
+        sc = cached_sum_chain(symbol, odate)
         if not sc.empty:
             for col in ["oi_CE", "chg_oi_CE", "volume_CE",
                         "oi_PE", "chg_oi_PE", "volume_PE"]:
@@ -1767,7 +1740,7 @@ elif section == "⛓️ Options":
         expiries = q("SELECT DISTINCT expiry FROM options WHERE symbol=? AND date=? "
                      "ORDER BY expiry", (symbol, odate))["expiry"].tolist()
         for i, exp in enumerate(expiries):
-            mp = analysis.max_pain(symbol, odate, exp)
+            mp = cached_max_pain(symbol, odate, exp)
             label = (f"Expiry {i+1} — {exp}" + (" (near)" if i == 0 else "")
                      + (f"   ·   max pain {mp:.0f}" if mp else ""))
             with st.expander(label, expanded=(i == 0)):

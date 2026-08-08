@@ -17,18 +17,22 @@ option chain**, and **FII/DII positioning** — with pure **statistical analysis
   the F&O universe is derived automatically from the latest F&O bhavcopy.
 - **Date-wise / timeline view** — pick a stock and a window (7 / 20 / 50 / All days) and
   see how everything evolved, latest day on top. Date sliders for fast scrubbing.
-- **6 sections** in a sidebar-navigation, glassmorphism UI (Outfit font, indigo/purple
+- **10 sections** grouped into a two-level sidebar-navigation (**📈 Per-stock** ·
+  **🌐 Market-wide** · **📊 All-stocks**), glassmorphism UI (Outfit font, indigo/purple
   premium theme, live top-movers ticker) — each maps to a data type:
 
-| Section | What it shows |
-|---|---|
-| 📈 **Equity / Cash** | Day-by-day OHLC, prev close, settle, % change, volume, turnover, trades, delivery qty/%; candlestick chart (hover for detail); split/bonus-adjusted |
-| 🔮 **Futures** | All three expiries (near/next/far): OHLC, settle, premium, OI + change, contracts, value, Σ total + estimated participant split |
-| ⛓️ **Options** | Sensibull-style — ITM shading, OI bars, ATM highlight, PCR, max pain; a combined "sum chain" across expiries + each expiry's own chain with OHLC/settle/turnover inside |
-| 🏦 **Participant** | FII / DII / Pro / Client **sentiment** (OI + Volume, Bearish‹—›Bullish bars per segment) + net trend + cumulative-flow charts |
-| 🔬 **Analysis** | One stock, **day-by-day** (date slider): price / delivery / F&O buildup / premium% / PCR change vs previous day — each with a **plain-language "matlab"** + that day's events (deals, ban, corp-action). *Educational interpretation, not advice* |
-| 📊 **Math stats** | All ~210 stocks' statistics in one sortable table (24 metrics + 1W/1M returns), sticky header + symbol |
-| 🌐 **Market** | NIFTY 50 / BANK / FINNIFTY charts + India VIX + broad & sectoral index table (official) **and** our F&O stocks' sector performance (avg 1D/1W/1M/1Y) + drill-down + day-by-day scrub |
+| Group | Section | What it shows |
+|---|---|---|
+| Per-stock | 📈 **Equity / Cash** | Day-by-day OHLC, prev close, settle, % change, volume, turnover, trades, delivery qty/%; candlestick chart (hover for detail); split/bonus-adjusted |
+| Per-stock | 📉 **Line chart** | Interactive price chart (line/candle, own timeframe, zoom/crosshair/PNG). **Data-driven support/resistance** — swing pivots, top-3 option **OI walls** (Put=support / Call=resist), **volume-profile POC** + value area — plus max-pain, σ-bands, 52w hi/lo, bulk/block **deal markers**, gap & F&O-ban markers. Optional panes: volume, delivery %, futures-OI (buildup-coloured), PCR, premium %, ₹/trade, short-selling. A **momentum panel** reads each non-price series vs its own 7- & 20-day average. *Chart TOOLS + pure statistics only — no technical indicators (RSI/MACD/MA)* |
+| Per-stock | 🔬 **Analysis** | One stock, **day-by-day** (date slider): price / delivery / F&O buildup / premium% / PCR change vs previous day — each with a **plain-language "matlab"** + that day's events (deals, ban, corp-action). *Educational interpretation, not advice* |
+| Per-stock | 🔮 **Futures** | All three expiries (near/next/far): OHLC, settle, premium, OI + change, contracts, value, Σ total + estimated participant split |
+| Per-stock | ⛓️ **Options** | Sensibull-style — ITM shading, OI bars, ATM highlight, PCR, max pain; a combined "sum chain" across expiries + each expiry's own chain with OHLC/settle/turnover inside |
+| Market-wide | 🏦 **Participant** | FII / DII / Pro / Client **sentiment** (OI + Volume, Bearish‹—›Bullish bars per segment) + net trend + cumulative-flow charts |
+| Market-wide | 🌐 **Market** | NIFTY 50 / BANK / FINNIFTY charts + India VIX + broad & sectoral index table (official) **and** our F&O stocks' sector performance (avg 1D/1W/1M/1Y) + drill-down + day-by-day scrub |
+| All-stocks | 📊 **Math stats** | All ~210 stocks' statistics in one sortable table (24 metrics + 1W/1M returns), sticky header + symbol |
+| All-stocks | ⚖️ **Compare** | Side-by-side multi-stock comparison |
+| All-stocks | 🩺 **Data health** | Ingest coverage / gaps per dataset |
 
 - **Auto-updating** — one command backfills from 1-Jan-2024 to today, then daily incremental.
 - **Holiday-aware fetching** — uses the NSE trading calendar, retries late-published data,
@@ -121,9 +125,11 @@ fetch_short_selling.py    # securities-wise daily short-selling quantity (backfi
 fetch_corp_actions.py     # dividends / splits / bonus / rights / buyback (by ex-date)
 fetch_fii_dii.py          # FII/DII cash-segment provisional flows (daily, forward-only)
 backup_db.py              # safe timestamped nse.db backup (SQLite online-backup)
-analysis.py               # pure-math stats + F&O math (+ exact corp-action split/bonus adj.)
+analysis.py               # pure-math stats + F&O math (max_pain / sum_chain + corp-action adj.)
+charts.py                 # pure Line-chart helpers (swing S/R, volume profile, momentum) — unit-tested
 cleanup_orphans.py        # remove exited-F&O stocks' orphaned F&O data + shrink DB
 dashboard.py              # Streamlit UI (date-wise, QuantCalc-style theme)
+render.py                 # presentation layer (HTML tables + CSS) used by dashboard.py
 .streamlit/config.toml    # premium dark theme (Outfit font, indigo/purple palette)
 run_daily.py              # fetch (equity→F&O→participant→VIX→indices) + analyse in one command
 run_daily.bat             # Task Scheduler entry point (Windows)
@@ -131,7 +137,6 @@ run_dashboard.bat         # one-click dashboard launcher (Windows)
 setup_server.sh           # Linux/AWS venv + cron setup
 task_scheduler_setup.txt  # Windows daily-automation guide
 GUIDE.md                  # full user guide — sections + every calculation explained
-PLAN.md                   # design notes
 ```
 
 ## 🗄️ Data source & licensing

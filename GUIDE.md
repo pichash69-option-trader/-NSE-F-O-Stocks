@@ -17,7 +17,7 @@ Left **sidebar** me:
 |---|---|
 | **Stock** dropdown | Kaunsa stock dekhna hai (search bhi kar sakte ho) |
 | **Kitne din dekhne hain** | 7 / 20 / 50 / All — kitne din ka data |
-| **Menu (6 sections)** | Neeche explain kiye hain |
+| **Menu (3 groups · 10 sections)** | Neeche explain kiye hain |
 | **❓ How to use** | Ye guide |
 
 Upar **ticker bar** — us din ke **Top 5 gainers** (green line) aur **Top 5 losers**
@@ -37,9 +37,10 @@ Upar **ticker bar** — us din ke **Top 5 gainers** (green line) aur **Top 5 los
 
 ---
 
-## 🗂️ 3. Sections (6) — kya, kis liye, aur matlab
+## 🗂️ 3. Sections — kya, kis liye, aur matlab
 
-Navigation sidebar me **6 sections** — 5 data-type (har ek DB ki ek table) + 1 screener:
+Navigation sidebar do-level hai — **3 groups** (📈 Per-stock · 🌐 Market-wide · 📊 All-stocks)
+ke andar total **10 sections**:
 
 ### 📈 Equity / Cash
 Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%**
@@ -48,6 +49,21 @@ Selected stock ka cash-market data, din-b-din. Har din ek **row**: OHLC, **Chg%*
 - 🟢 up din · 🔴 down din
 - **Matlab:** Delivery % high = **real buying** (log actually shares le ja rahe, sirf
   intraday speculation nahi). Volume high + delivery low = zyada tar intraday churn.
+
+### 📉 Line chart (interactive charting — chart TOOLS + pure stats, NO indicators)
+Ek interactive price chart — **Line/Candle**, apna timeframe (20/50/100/250/All), zoom
+(drag/scroll), crosshair, PNG download. **Sab overlays ⚙️ Overlays menu me on/off**, default
+view saaf. Sab **data-driven / pure statistics** hai — koi RSI/MACD/moving-average nahi.
+
+- **Support/Resistance (data se, formula se nahi):**
+  - **Swing S/R** — recent local highs/lows (reversal points), nearby cluster + touch-count. R (red) upar, S (green) neeche.
+  - **Option OI walls** — sabse zyada **Put-OI** strike = support, **Call-OI** strike = resistance (top-3, ★=strongest). OI sab expiry ka sum (`options` table).
+  - **Volume-profile POC** — jahan sabse zyada volume traded (strongest level) + 70% value-area zone.
+  - **Max-pain** — jahan option-writers ka total payout minimum (expiry magnet).
+- **Stat overlays:** mean ±1σ/±2σ bands (z-score stretch), 52-week high/low levels.
+- **Event markers:** **bulk/block deal** ▲buy/▼sell (institutional), gap-up/down, corp-action ex-dates, F&O ban days.
+- **Extra panes:** Volume · Delivery% · **Futures-OI** (bar rang = buildup: 🟢 long buildup · 🩵 short covering · 🔴 short buildup · 🟠 long unwinding) · **PCR** · **Premium%** · **₹/trade** (avg trade size = institutional footprint) · **Short-selling**.
+- **⚡ Momentum panel** — har **non-price** data (Volume, Delivery%, Turnover, Range%, Fut-OI, |OI-chg|, |return|) aaj apne **trailing 7-din aur 20-din average** se upar (🟢) / neeche (🔴) hai — kitne 🟢 = momentum score (ACTIVE/MIXED/QUIET). PCR context me. *Price ka moving-average jaan-bujh ke nahi — statistical observation, prediction/advice nahi.*
 
 ### 🔮 Futures
 - **Futures read (aaj)** — Premium (near), Total OI + change, near-expiry + **days-to-expiry**;
