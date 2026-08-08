@@ -843,7 +843,8 @@ if section == "📈 Equity / Cash":
         st.caption("Futures 🔮 aur Option chain ⛓️ sidebar ke alag sections me hain.")
 
 # =========================================================================== #
-# TAB — Line chart (one stock: close-price line + volume bars)
+# TAB — Line chart (interactive price chart: type switch, scale, zoom, crosshair)
+# NOTE: chart TOOLS only — no technical indicators (RSI/MACD/MA), by project rule.
 # =========================================================================== #
 elif section == "📉 Line chart":
     hist = stock_history(symbol)
@@ -853,46 +854,98 @@ elif section == "📉 Line chart":
         view = hist if lookback == "All" else hist.tail(int(lookback))
         latest = view.iloc[-1]
 
-        st.subheader(f"{symbol} — line chart")
-        c1, c2, c3 = st.columns(3)
+        st.subheader(f"{symbol} — chart")
+        c1, c2, c3, c4 = st.columns(4)
         c1.metric("Close", f"{latest['close']:.2f}", f"{latest['chg_pct']:+.2f}%")
-        c2.metric("Volume", f"{latest['volume']:,.0f}")
-        c3.metric("Din (range me)", f"{len(view)}")
+        c2.metric("High (range)", f"{view['high'].max():.2f}")
+        c3.metric("Low (range)", f"{view['low'].min():.2f}")
+        c4.metric("Din (range me)", f"{len(view)}")
+
+        # --- Chart toolbar (type / scale / volume) — timeframe = sidebar lookback ---
+        tb1, tb2, tb3 = st.columns([3, 2, 2])
+        ctype = tb1.segmented_control(
+            "Chart type", ["Line", "Area", "Candle", "Bar"],
+            default="Line", key="lc_type", label_visibility="collapsed")
+        scale = tb2.segmented_control(
+            "Scale", ["Linear", "Log"], default="Linear",
+            key="lc_scale", label_visibility="collapsed")
+        show_vol = tb3.toggle("Volume pane", value=True, key="lc_vol")
+        ctype = ctype or "Line"
+        st.caption(f"📅 Timeframe = sidebar **{lookback}** din · zoom = drag/scroll · "
+                   "double-click = reset · 🖱️ crosshair on hover · modebar top-right (pan / box-zoom / PNG).")
 
         cv = view.copy()
-        line_up = latest["close"] >= view.iloc[0]["close"]
-        line_color = "#10b981" if line_up else "#f43f5e"
+        up = latest["close"] >= view.iloc[0]["close"]
+        color = "#10b981" if up else "#f43f5e"
+        UP, DN = "#10b981", "#f43f5e"
 
-        fig = make_subplots(specs=[[{"secondary_y": True}]])
-        # Volume bars (background, secondary axis) — up/down day coloured
-        vol_colors = ["#10b981" if pd.notna(ch) and ch >= 0 else "#f43f5e"
-                      for ch in cv["chg_pct"]]
-        fig.add_trace(go.Bar(
-            x=cv["date"], y=cv["volume"], name="Volume",
-            marker_color=vol_colors, marker_line_width=0, opacity=0.35,
-            hovertemplate="%{x}<br>Volume %{y:,.0f}<extra></extra>"),
-            secondary_y=True)
-        # Close price line (foreground, primary axis)
-        fig.add_trace(go.Scatter(
-            x=cv["date"], y=cv["close"], name="Close", mode="lines",
-            line=dict(color=line_color, width=2),
-            hovertemplate="%{x}<br>Close %{y:.2f}<extra></extra>"),
-            secondary_y=False)
+        # Two stacked panes (price on top, volume below) sharing the x-axis;
+        # or a single price pane when the volume toggle is off.
+        if show_vol:
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
+                                vertical_spacing=0.03, row_heights=[0.74, 0.26])
+        else:
+            fig = make_subplots(rows=1, cols=1)
+
+        # --- Price pane: the trace depends on the chosen chart type ---
+        if ctype == "Candle":
+            fig.add_trace(go.Candlestick(
+                x=cv["date"], open=cv["open"], high=cv["high"],
+                low=cv["low"], close=cv["close"], name="",
+                increasing_line_color=UP, decreasing_line_color=DN,
+                increasing_fillcolor=UP, decreasing_fillcolor=DN),
+                row=1, col=1)
+        elif ctype == "Bar":                    # OHLC bars
+            fig.add_trace(go.Ohlc(
+                x=cv["date"], open=cv["open"], high=cv["high"],
+                low=cv["low"], close=cv["close"], name="",
+                increasing_line_color=UP, decreasing_line_color=DN),
+                row=1, col=1)
+        elif ctype == "Area":
+            fig.add_trace(go.Scatter(
+                x=cv["date"], y=cv["close"], name="Close", mode="lines",
+                line=dict(color=color, width=2), fill="tozeroy",
+                fillcolor="rgba(16,185,129,.10)" if up else "rgba(244,63,94,.10)",
+                hovertemplate="%{x}<br>Close %{y:.2f}<extra></extra>"),
+                row=1, col=1)
+        else:                                   # Line (default)
+            fig.add_trace(go.Scatter(
+                x=cv["date"], y=cv["close"], name="Close", mode="lines",
+                line=dict(color=color, width=2),
+                hovertemplate="%{x}<br>Close %{y:.2f}<extra></extra>"),
+                row=1, col=1)
+
+        # --- Volume pane (own row, green up-day / red down-day) ---
+        if show_vol:
+            vcol = [UP if pd.notna(ch) and ch >= 0 else DN for ch in cv["chg_pct"]]
+            fig.add_trace(go.Bar(
+                x=cv["date"], y=cv["volume"], name="Volume",
+                marker_color=vcol, marker_line_width=0,
+                hovertemplate="%{x}<br>Volume %{y:,.0f}<extra></extra>"),
+                row=2, col=1)
+            fig.update_yaxes(title_text="Vol", row=2, col=1, showgrid=False)
+
+        # --- Layout: crosshair spikes, category x (no weekend gaps), scale ---
         fig.update_layout(
-            height=420, margin=dict(l=0, r=0, t=10, b=0),
-            hovermode="x unified", showlegend=False, bargap=0.15)
-        step = max(1, len(cv) // 10)
-        fig.update_xaxes(type="category", tickmode="array",
-                         tickvals=list(cv["date"])[::step])
-        fig.update_yaxes(title_text="Price", secondary_y=False)
-        # Give volume its own compressed band at the bottom so bars don't
-        # overpower the price line.
-        vmax = float(cv["volume"].max() or 1)
-        fig.update_yaxes(title_text="Volume", secondary_y=True,
-                         range=[0, vmax * 3.5], showgrid=False)
-        st.plotly_chart(fig, width="stretch")
-        st.caption("🟢/🔴 line = period ka net up/down · bars = us din ka volume "
-                   "(green = up day, red = down day). Aur kya add karna hai batao.")
+            height=560, margin=dict(l=0, r=0, t=10, b=0),
+            hovermode="x unified", showlegend=False, bargap=0.2,
+            xaxis_rangeslider_visible=False, dragmode="zoom")
+        step = max(1, len(cv) // 12)
+        fig.update_xaxes(type="category", showspikes=True, spikemode="across",
+                         spikethickness=1, spikedash="dot", spikecolor="#8b8ba7")
+        # Only label the bottom-most axis (shared x); thin the ticks.
+        bottom_row = 2 if show_vol else 1
+        fig.update_xaxes(showticklabels=False)
+        fig.update_xaxes(showticklabels=True, tickmode="array",
+                         tickvals=list(cv["date"])[::step], row=bottom_row, col=1)
+        fig.update_yaxes(title_text="Price", row=1, col=1, showspikes=True,
+                         spikemode="across", spikethickness=1, spikedash="dot",
+                         spikecolor="#8b8ba7",
+                         type="log" if scale == "Log" else "linear")
+        st.plotly_chart(fig, width="stretch",
+                        config={"scrollZoom": True, "displaylogo": False})
+        st.caption("Chart TOOLS only — koi technical indicator (RSI/MACD/MA) nahi "
+                   "(project rule). Aur kya add karna hai batao.")
 
 # =========================================================================== #
 # TAB — Analysis (one stock, day-by-day, with plain-language interpretation)
