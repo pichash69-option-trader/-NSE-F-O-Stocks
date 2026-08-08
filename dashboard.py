@@ -873,9 +873,8 @@ elif section == "📉 Line chart":
             st.caption("**Stat overlays (price pane)**")
             show_bands = st.checkbox("Mean ±σ bands (z-score)", value=False, key="lc_bands")
             show_hilo = st.checkbox("52w High / Low levels", value=False, key="lc_hilo")
-            show_avg = st.checkbox("Average price line", value=False, key="lc_avg")
-            show_dd = st.checkbox("Max-drawdown span", value=False, key="lc_dd")
             st.caption("**Event markers (price pane)**")
+            show_deals = st.checkbox("Bulk/block deal markers", value=True, key="lc_deals")
             show_gap = st.checkbox("Gap + hi-volume markers", value=False, key="lc_gap")
             show_ca = st.checkbox("Corp-action lines", value=False, key="lc_ca")
             show_ban = st.checkbox("F&O ban markers", value=False, key="lc_ban")
@@ -884,8 +883,9 @@ elif section == "📉 Line chart":
             show_deliv = st.checkbox("Delivery % pane", value=True, key="lc_deliv")
             show_futoi = st.checkbox("Futures OI pane (buildup)", value=False, key="lc_futoi")
             show_pcr = st.checkbox("PCR pane", value=False, key="lc_pcr")
-            show_ret = st.checkbox("Daily return % pane", value=False, key="lc_ret")
-            show_cum = st.checkbox("Cumulative return line", value=False, key="lc_cum")
+            show_prem = st.checkbox("Futures premium % pane", value=False, key="lc_prem")
+            show_tsize = st.checkbox("Avg trade-size pane", value=False, key="lc_tsize")
+            show_short = st.checkbox("Short-selling pane", value=False, key="lc_short")
         tf = tf or "50"
         ctype = ctype or "Line"
 
@@ -926,12 +926,19 @@ elif section == "📉 Line chart":
             if _ne:
                 mp_line = analysis.max_pain(symbol, _od, _ne)
 
-        # --- Events within the visible window: corp actions + F&O ban days ---
+        # --- Events within the visible window: corp actions · ban · deals · short ---
         d0, d1 = cv["date"].iloc[0], cv["date"].iloc[-1]
         ca_ev = q("SELECT ex_date, action_type FROM corp_actions WHERE symbol=? "
                   "AND ex_date BETWEEN ? AND ? ORDER BY ex_date", (symbol, d0, d1))
         ban_ev = q("SELECT date FROM secban WHERE symbol=? AND date BETWEEN ? AND ? "
                    "ORDER BY date", (symbol, d0, d1))
+        deals_ev = q("SELECT date, buy_sell, qty, price, client FROM deals WHERE symbol=? "
+                     "AND date BETWEEN ? AND ? ORDER BY date", (symbol, d0, d1))
+        short_ev = q("SELECT date, qty FROM short_selling WHERE symbol=? "
+                     "AND date BETWEEN ? AND ?", (symbol, d0, d1))
+        cv["short_qty"] = (cv["date"].map(short_ev.set_index("date")["qty"])
+                           if not short_ev.empty else np.nan)
+        cv["trade_size"] = cv["turnover"] / cv["num_trades"].replace(0, np.nan)
 
         # --- Fill the top header + metrics + stat strip now that view is known ---
         with header_box:
@@ -953,7 +960,6 @@ elif section == "📉 Line chart":
                     f"Sharpe {_sv(s['sharpe'])} · "
                     f"Beta {_sv(s['beta'])} · "
                     f"MaxDD {_sv(s['max_drawdown'],100,'%',0)} · "
-                    f"Skew {_sv(s['skew'])} · Kurt {_sv(s['kurtosis'])} · "
                     f"CAGR {_sv(s['cagr'],100,'%',0)} · "
                     f"z {_sv(s['zscore'])} · 52w %ile {_sv(s['pct_rank_52w'],1,'',0)}")
             # Window averages — "data ka average"
@@ -977,8 +983,9 @@ elif section == "📉 Line chart":
                  ([("deliv",)] if show_deliv else []) + \
                  ([("futoi",)] if show_futoi and _has_oi else []) + \
                  ([("pcr",)] if show_pcr and _has_pcr else []) + \
-                 ([("ret",)] if show_ret else []) + \
-                 ([("cum",)] if show_cum else [])
+                 ([("prem",)] if show_prem and cv["prem_pct"].notna().any() else []) + \
+                 ([("tsize",)] if show_tsize and cv["trade_size"].notna().any() else []) + \
+                 ([("short",)] if show_short and cv["short_qty"].notna().any() else [])
         extras = [e[0] for e in extras]
         n_extra = len(extras)
         weights = [3.0] + [1.0] * n_extra
@@ -1032,27 +1039,6 @@ elif section == "📉 Line chart":
                           annotation_text="52w Low", annotation_position="left",
                           annotation_font_size=9, row=1, col=1)
 
-        # --- Overlay: flat average-price line over the window (optional) ---
-        if show_avg:
-            fig.add_hline(y=mean_p, line=dict(color="#f59e0b", width=1.4, dash="longdash"),
-                          annotation_text=f"avg ₹{mean_p:,.0f}", annotation_position="right",
-                          annotation_font_size=10, row=1, col=1)
-
-        # --- Overlay: max-drawdown span (biggest peak->trough in the window) ---
-        if show_dd and len(cv) > 2:
-            cls = cv["close"].reset_index(drop=True)
-            runmax = cls.cummax()
-            ddser = cls / runmax - 1.0
-            t_i = int(ddser.idxmin())                 # trough position
-            p_i = int(cls.iloc[:t_i + 1].idxmax())    # the peak feeding it
-            dd_pct = float(ddser.iloc[t_i] * 100)
-            if dd_pct < -0.5 and p_i < t_i:
-                fig.add_vrect(
-                    x0=cv["date"].iloc[p_i], x1=cv["date"].iloc[t_i],
-                    fillcolor="rgba(244,63,94,.10)", line_width=0, row=1, col=1,
-                    annotation_text=f"max DD {dd_pct:.1f}%", annotation_position="top left",
-                    annotation_font_size=10, annotation_font_color="#f87171")
-
         # --- Overlay: gap up/down + highest-volume markers ---
         if show_gap:
             prev_c = cv["close"].shift(1)
@@ -1105,6 +1091,32 @@ elif section == "📉 Line chart":
                     marker=dict(symbol="square", size=7, color="rgba(244,63,94,.85)"),
                     hovertemplate="<b>%{x}</b><br>F&O BAN day (MWPL >95%)<extra></extra>"),
                     row=1, col=1)
+
+        # --- Overlay: bulk/block deal markers (buy ▲ / sell ▼, institutional) ---
+        if show_deals and not deals_ev.empty:
+            dset = set(cv["date"])
+            de = deals_ev[deals_ev["date"].isin(dset)]
+            if not de.empty:
+                lowmap, highmap = cv.set_index("date")["low"], cv.set_index("date")["high"]
+                for side, msym, mcol, ymap, yf, nm in [
+                    ("BUY", "triangle-up", "#22d3ee", lowmap, 0.985, "Deal BUY"),
+                    ("SELL", "triangle-down", "#fb923c", highmap, 1.015, "Deal SELL")]:
+                    s = de[de["buy_sell"].str.upper() == side]
+                    if s.empty:
+                        continue
+                    g = s.groupby("date").agg(
+                        qty=("qty", "sum"), n=("qty", "size"),
+                        cl=("client", lambda x: " · ".join(list(x.astype(str))[:3])))
+                    xs = list(g.index)
+                    ys = [float(ymap.get(d)) * yf for d in xs]
+                    txt = [f"{side} {_fmt(qt)} ({int(nn)} deal)"
+                           + (f"<br>{c}" if c else "")
+                           for qt, nn, c in zip(g["qty"], g["n"], g["cl"])]
+                    fig.add_trace(go.Scatter(
+                        x=xs, y=ys, mode="markers", name=nm,
+                        marker=dict(symbol=msym, size=11, color=mcol,
+                                    line=dict(width=1, color="#0b0b14")),
+                        text=txt, hovertemplate="%{text}<extra></extra>"), row=1, col=1)
 
         # --- S/R 1: Swing high/low pivots (recent local highs/lows, clustered) ---
         if show_sr and len(cv) >= 7:
@@ -1258,33 +1270,38 @@ elif section == "📉 Line chart":
             fig.update_yaxes(title_text="PCR", row=pr, col=1, showgrid=False,
                              zeroline=False, tickfont_size=10)
 
-        # --- Daily return % pane (green up-day / red down-day bars) ---
-        if show_ret:
-            rr = row_of["ret"]
-            rcol = [(UP if pd.notna(ch) and ch >= 0 else DN) for ch in cv["chg_pct"]]
-            fig.add_trace(go.Bar(
-                x=cv["date"], y=cv["chg_pct"], name="Daily %",
-                marker_color=rcol, marker_line_width=0,
-                hovertemplate="<b>%{x}</b><br>Return %{y:+.2f}%<extra></extra>"),
-                row=rr, col=1)
-            fig.add_hline(y=0, line=dict(color="#8b8ba7", width=1), row=rr, col=1)
-            fig.update_yaxes(title_text="Ret%", row=rr, col=1, showgrid=False,
+        # --- Futures premium/discount % pane (near-future vs spot basis) ---
+        if "prem" in row_of:
+            pm = row_of["prem"]
+            fig.add_trace(go.Scatter(
+                x=cv["date"], y=cv["prem_pct"], name="Prem%", mode="lines",
+                line=dict(color="#f472b6", width=1.8),
+                hovertemplate="<b>%{x}</b><br>Premium %{y:+.2f}%<extra></extra>"),
+                row=pm, col=1)
+            fig.add_hline(y=0, line=dict(color="#8b8ba7", width=1), row=pm, col=1)
+            fig.update_yaxes(title_text="Prem%", row=pm, col=1, showgrid=False,
                              zeroline=False, tickfont_size=10)
 
-        # --- Cumulative return line (rebased to 0% at window start) ---
-        if show_cum:
-            rc = row_of["cum"]
-            cumret = (cv["close"] / float(cv["close"].iloc[0]) - 1.0) * 100
-            cend = float(cumret.iloc[-1])
-            cline = UP if cend >= 0 else DN
+        # --- Avg trade-size pane (turnover ÷ trades — institutional footprint) ---
+        if "tsize" in row_of:
+            tz = row_of["tsize"]
             fig.add_trace(go.Scatter(
-                x=cv["date"], y=cumret, name="Cum %", mode="lines",
-                line=dict(color=cline, width=1.8), fill="tozeroy",
-                fillcolor=("rgba(16,185,129,.08)" if cend >= 0 else "rgba(244,63,94,.08)"),
-                hovertemplate="<b>%{x}</b><br>Cum return %{y:+.2f}%<extra></extra>"),
-                row=rc, col=1)
-            fig.add_hline(y=0, line=dict(color="#8b8ba7", width=1), row=rc, col=1)
-            fig.update_yaxes(title_text="Cum%", row=rc, col=1, showgrid=False,
+                x=cv["date"], y=cv["trade_size"], name="₹/trade", mode="lines",
+                line=dict(color="#60a5fa", width=1.8),
+                hovertemplate="<b>%{x}</b><br>Avg trade ₹%{y:,.0f}<extra></extra>"),
+                row=tz, col=1)
+            fig.update_yaxes(title_text="₹/trade", row=tz, col=1, showgrid=False,
+                             zeroline=False, tickfont_size=10)
+
+        # --- Short-selling pane (daily short-sold quantity — bearish pressure) ---
+        if "short" in row_of:
+            sh = row_of["short"]
+            fig.add_trace(go.Bar(
+                x=cv["date"], y=cv["short_qty"], name="Short qty",
+                marker_color="rgba(244,63,94,.6)", marker_line_width=0,
+                hovertemplate="<b>%{x}</b><br>Short qty %{y:,.0f}<extra></extra>"),
+                row=sh, col=1)
+            fig.update_yaxes(title_text="Short", row=sh, col=1, showgrid=False,
                              zeroline=False, tickfont_size=10)
 
         # --- Layout: dark, subtle grid, crosshair spikes, unified hover ---
@@ -1322,11 +1339,11 @@ elif section == "📉 Line chart":
                         config={"scrollZoom": True, "displaylogo": False,
                                 "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
         st.caption(
-            "⚙️ Overlays me sab on-off: σ-bands · hi-lo · drawdown · gap · **max-pain** · "
-            "**corp/ban** · **Swing S/R** (R red / S green) · **Volume POC** (amber) · "
-            "**Option OI walls** (top-3 Put=support / Call=resist, ★=strongest) · "
-            "volume · delivery · **Fut-OI** · "
-            "**PCR** · return · cumulative. "
+            "⚙️ Overlays me on-off: **Swing S/R** (R red / S green) · **Option OI walls** "
+            "(top-3 Put=support / Call=resist, ★=strongest) · **Volume POC** · **max-pain** · "
+            "σ-bands · 52w hi-lo · **deal markers** (▲buy / ▼sell) · gap · corp / ban · "
+            "panes: volume · delivery · **Fut-OI** (buildup) · **PCR** · **premium%** · "
+            "**₹/trade** · **short**. "
             "Fut-OI bars ka rang = buildup: 🟢 long buildup · 🩵 short covering · "
             "🔴 short buildup · 🟠 long unwinding. "
             "Sab pure data/statistics — koi technical indicator nahi (project rule).")
