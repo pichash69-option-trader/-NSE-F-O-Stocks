@@ -851,7 +851,19 @@ elif section == "📉 Line chart":
     if hist.empty:
         st.warning(f"{symbol}: koi data nahi. Pehle fetch_data / fetch_fno chalao.")
     else:
-        view = hist if lookback == "All" else hist.tail(int(lookback))
+        # --- Chart toolbar: own timeframe (independent of sidebar) / type / volume ---
+        tb1, tb2, tb3 = st.columns([3, 2, 2])
+        tf = tb1.segmented_control(
+            "Timeframe", ["20", "50", "100", "250", "All"], default="50",
+            key="lc_tf", label_visibility="collapsed")
+        ctype = tb2.segmented_control(
+            "Chart type", ["Line", "Candle"], default="Line",
+            key="lc_type", label_visibility="collapsed")
+        show_vol = tb3.toggle("Volume pane", value=True, key="lc_vol")
+        tf = tf or "50"
+        ctype = ctype or "Line"
+
+        view = hist if tf == "All" else hist.tail(int(tf))
         latest = view.iloc[-1]
 
         st.subheader(f"{symbol} — chart")
@@ -860,18 +872,7 @@ elif section == "📉 Line chart":
         c2.metric("High (range)", f"{view['high'].max():.2f}")
         c3.metric("Low (range)", f"{view['low'].min():.2f}")
         c4.metric("Din (range me)", f"{len(view)}")
-
-        # --- Chart toolbar (type / scale / volume) — timeframe = sidebar lookback ---
-        tb1, tb2, tb3 = st.columns([3, 2, 2])
-        ctype = tb1.segmented_control(
-            "Chart type", ["Line", "Area", "Candle", "Bar"],
-            default="Line", key="lc_type", label_visibility="collapsed")
-        scale = tb2.segmented_control(
-            "Scale", ["Linear", "Log"], default="Linear",
-            key="lc_scale", label_visibility="collapsed")
-        show_vol = tb3.toggle("Volume pane", value=True, key="lc_vol")
-        ctype = ctype or "Line"
-        st.caption(f"📅 Timeframe = sidebar **{lookback}** din · zoom = drag/scroll · "
+        st.caption("📅 Timeframe upar se choose karo · zoom = drag/scroll · "
                    "double-click = reset · 🖱️ crosshair on hover · modebar top-right (pan / box-zoom / PNG).")
 
         cv = view.copy()
@@ -894,19 +895,6 @@ elif section == "📉 Line chart":
                 low=cv["low"], close=cv["close"], name="",
                 increasing_line_color=UP, decreasing_line_color=DN,
                 increasing_fillcolor=UP, decreasing_fillcolor=DN),
-                row=1, col=1)
-        elif ctype == "Bar":                    # OHLC bars
-            fig.add_trace(go.Ohlc(
-                x=cv["date"], open=cv["open"], high=cv["high"],
-                low=cv["low"], close=cv["close"], name="",
-                increasing_line_color=UP, decreasing_line_color=DN),
-                row=1, col=1)
-        elif ctype == "Area":
-            fig.add_trace(go.Scatter(
-                x=cv["date"], y=cv["close"], name="Close", mode="lines",
-                line=dict(color=color, width=2), fill="tozeroy",
-                fillcolor="rgba(16,185,129,.10)" if up else "rgba(244,63,94,.10)",
-                hovertemplate="%{x}<br>Close %{y:.2f}<extra></extra>"),
                 row=1, col=1)
         else:                                   # Line (default)
             fig.add_trace(go.Scatter(
@@ -940,8 +928,7 @@ elif section == "📉 Line chart":
                          tickvals=list(cv["date"])[::step], row=bottom_row, col=1)
         fig.update_yaxes(title_text="Price", row=1, col=1, showspikes=True,
                          spikemode="across", spikethickness=1, spikedash="dot",
-                         spikecolor="#8b8ba7",
-                         type="log" if scale == "Log" else "linear")
+                         spikecolor="#8b8ba7")
         st.plotly_chart(fig, width="stretch",
                         config={"scrollZoom": True, "displaylogo": False})
         st.caption("Chart TOOLS only — koi technical indicator (RSI/MACD/MA) nahi "
