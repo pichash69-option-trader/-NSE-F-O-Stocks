@@ -36,6 +36,22 @@ MOMENTUM_PARAMS = dict(
 )
 
 
+# "Momentum directional spread" — same momentum entry, but a DEBIT SPREAD in the
+# breakout direction (bull call / bear put): cheaper, less theta, defined risk.
+SPREAD_PARAMS = dict(MOMENTUM_PARAMS)
+SPREAD_PARAMS.update(dict(
+    hold_days=7,              # momentum is fast — shorter hold
+    exit_before_expiry=3,
+    target_move_pct=7.0,      # exit when underlying moves +7% in the direction
+    stop_move_pct=3.0,        # exit when it reverses -3% against
+))
+
+STRATEGIES = {
+    "Momentum buying": MOMENTUM_PARAMS,
+    "Momentum directional spread": SPREAD_PARAMS,
+}
+
+
 def lot_sizes(conn):
     """Per-symbol NSE lot size, derived from futures: lot = value / (contracts ×
     price). (The `value_lakh` column actually holds value in rupees.) Median per
@@ -161,7 +177,88 @@ def _manage(conn, symbol, expiry, ce_k, pe_k, entry_date, entry_prem, p):
                 pnl_points=val - entry_prem, days_held=len(dates), exit_reason="dataend")
 
 
-def run_symbol(conn, symbol, p, ban_dates=None):
+def _setup_spread(conn, symbol, entry_date, spot, direction, p):
+    """Debit spread: long ATM + short OTM+`otm_steps` (same option type).
+    direction 'up' -> bull call (CE), 'down' -> bear put (PE).
+    Returns (expiry, opt_type, long_k, short_k, entry_debit) or None."""
+    exps = pd.read_sql_query(
+        "SELECT DISTINCT expiry FROM options WHERE symbol=? AND date=? ORDER BY expiry",
+        conn, params=(symbol, entry_date))["expiry"].tolist()
+    ed = pd.Timestamp(entry_date)
+    expiry = next((e for e in exps if (pd.Timestamp(e) - ed).days >= p["dte_min"]), None)
+    if expiry is None:
+        return None
+    ot = "CE" if direction == "up" else "PE"
+    chain = pd.read_sql_query(
+        "SELECT strike,opt_type,close,oi,volume FROM options "
+        "WHERE symbol=? AND date=? AND expiry=? AND opt_type=?",
+        conn, params=(symbol, entry_date, expiry, ot))
+    if chain.empty:
+        return None
+    strikes = np.sort(chain["strike"].unique())
+    atm_i = int(np.abs(strikes - spot).argmin())
+    short_i = atm_i + p["otm_steps"] if ot == "CE" else atm_i - p["otm_steps"]
+    if short_i < 0 or short_i >= len(strikes):
+        return None
+    long_k, short_k = float(strikes[atm_i]), float(strikes[short_i])
+    lo = chain[chain.strike == long_k]
+    sh = chain[chain.strike == short_k]
+    if lo.empty or sh.empty:
+        return None
+    lo, sh = lo.iloc[0], sh.iloc[0]
+    if (lo.oi < p["leg_oi_min"] or sh.oi < p["leg_oi_min"] or
+            lo.volume < p["leg_vol_min"] or sh.volume < p["leg_vol_min"]):
+        return None
+    debit = float(lo.close) - float(sh.close)   # long costs more -> net debit
+    if debit <= 0:
+        return None
+    return expiry, ot, long_k, short_k, debit
+
+
+def _manage_spread(conn, symbol, expiry, ot, long_k, short_k, entry_date,
+                   debit, entry_spot, spots, p):
+    """Walk the spread value (long − short) to a target/stop/time exit."""
+    rows = pd.read_sql_query(
+        "SELECT date,strike,close FROM options WHERE symbol=? AND expiry=? AND opt_type=? "
+        "AND date>=? AND strike IN (?,?) ORDER BY date",
+        conn, params=(symbol, expiry, ot, entry_date, long_k, short_k))
+    if rows.empty:
+        return None
+    piv = rows.pivot_table(index="date", columns="strike", values="close", aggfunc="first")
+    if long_k not in piv.columns or short_k not in piv.columns:
+        return None
+    spread = (piv[long_k].ffill() - piv[short_k].ffill()).dropna()
+    dates = [d for d in spread.index if d > entry_date]
+    if not dates:
+        return None
+    exp_cut = pd.Timestamp(expiry) - pd.Timedelta(days=p["exit_before_expiry"])
+    for i, d in enumerate(dates, start=1):
+        val = float(spread[d])
+        pnl = (val / debit - 1) * 100
+        spot_d = spots.get(d)
+        fav = None
+        if spot_d is not None and pd.notna(spot_d):
+            mv = (spot_d / entry_spot - 1) * 100
+            fav = mv if ot == "CE" else -mv     # favourable move (+ve = good)
+        reason = None
+        if fav is not None and fav >= p["target_move_pct"]:
+            reason = "target"
+        elif fav is not None and fav <= -p["stop_move_pct"]:
+            reason = "stop"
+        elif i >= p["hold_days"]:
+            reason = "time"
+        elif pd.Timestamp(d) >= exp_cut:
+            reason = "expiry"
+        if reason:
+            return dict(exit_date=d, exit_prem=round(val, 2), pnl_pct=pnl,
+                        pnl_points=val - debit, days_held=i, exit_reason=reason)
+    d = dates[-1]
+    val = float(spread[d])
+    return dict(exit_date=d, exit_prem=round(val, 2), pnl_pct=(val / debit - 1) * 100,
+                pnl_points=val - debit, days_held=len(dates), exit_reason="dataend")
+
+
+def run_symbol(conn, symbol, p, strategy="Momentum buying", ban_dates=None):
     """Backtest one stock. Returns a list of trade dicts (no overlapping trades)."""
     px = pd.read_sql_query(
         "SELECT date,open,high,low,close,prev_close,volume,turnover,deliv_pct "
@@ -176,6 +273,8 @@ def run_symbol(conn, symbol, p, ban_dates=None):
     if ban_dates is None:
         ban_dates = set(pd.read_sql_query(
             "SELECT date FROM secban WHERE symbol=?", conn, params=(symbol,))["date"])
+    spots = px.set_index("date")["close"]
+    is_spread = strategy == "Momentum directional spread"
 
     trades, busy_until = [], ""
     for r in px.itertuples():
@@ -183,17 +282,38 @@ def run_symbol(conn, symbol, p, ban_dates=None):
             continue
         if r.date in ban_dates:
             continue
-        setup = _entry_setup(conn, symbol, r.date, float(r.close), p)
-        if setup is None:
-            continue
-        expiry, ce_k, pe_k, entry_prem = setup
-        res = _manage(conn, symbol, expiry, ce_k, pe_k, r.date, entry_prem, p)
-        if res is None:
-            continue
-        trades.append(dict(symbol=symbol, entry_date=r.date, expiry=expiry,
-                           ce_strike=ce_k, pe_strike=pe_k, entry_prem=round(entry_prem, 2),
-                           **{k: (round(v, 2) if isinstance(v, float) else v)
-                              for k, v in res.items()}))
+        if is_spread:
+            # direction from the breakout (else the day's price move)
+            if pd.notna(r.roll_hi) and r.close > r.roll_hi:
+                direction = "up"
+            elif pd.notna(r.roll_lo) and r.close < r.roll_lo:
+                direction = "down"
+            else:
+                direction = "up" if r.chg_pct >= 0 else "down"
+            setup = _setup_spread(conn, symbol, r.date, float(r.close), direction, p)
+            if setup is None:
+                continue
+            expiry, ot, long_k, short_k, debit = setup
+            res = _manage_spread(conn, symbol, expiry, ot, long_k, short_k, r.date,
+                                 debit, float(r.close), spots, p)
+            if res is None:
+                continue
+            head = dict(symbol=symbol, entry_date=r.date, expiry=expiry,
+                        structure="bull call" if ot == "CE" else "bear put",
+                        strike1=long_k, strike2=short_k, entry_prem=round(debit, 2))
+        else:
+            setup = _entry_setup(conn, symbol, r.date, float(r.close), p)
+            if setup is None:
+                continue
+            expiry, ce_k, pe_k, entry_prem = setup
+            res = _manage(conn, symbol, expiry, ce_k, pe_k, r.date, entry_prem, p)
+            if res is None:
+                continue
+            head = dict(symbol=symbol, entry_date=r.date, expiry=expiry,
+                        structure="strangle", strike1=ce_k, strike2=pe_k,
+                        entry_prem=round(entry_prem, 2))
+        trades.append(dict(**head, **{k: (round(v, 2) if isinstance(v, float) else v)
+                                      for k, v in res.items()}))
         busy_until = res["exit_date"]      # no pyramiding
     return trades
 
@@ -249,10 +369,10 @@ def equity_curve(trades_df):
     return e[["exit_date", "cum_pts"]].reset_index(drop=True)
 
 
-def run(symbols=None, params=None, progress=None):
-    """Run the Momentum-buying backtest across `symbols` (default: all F&O).
+def run(strategy="Momentum buying", symbols=None, params=None, progress=None):
+    """Run a named strategy across `symbols` (default: all F&O).
     Returns (trades_df, per_stock_df, overall_dict, equity_df)."""
-    p = dict(MOMENTUM_PARAMS)
+    p = dict(STRATEGIES.get(strategy, MOMENTUM_PARAMS))
     if params:
         p.update(params)
     conn = db.connect()
@@ -263,7 +383,7 @@ def run(symbols=None, params=None, progress=None):
         lots = lot_sizes(conn)
         all_trades = []
         for i, sym in enumerate(symbols):
-            all_trades.extend(run_symbol(conn, sym, p))
+            all_trades.extend(run_symbol(conn, sym, p, strategy))
             if progress:
                 progress(i + 1, len(symbols), sym)
     finally:

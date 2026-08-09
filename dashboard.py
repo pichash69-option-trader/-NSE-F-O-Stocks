@@ -537,8 +537,8 @@ def cached_sum_chain(symbol, date):
 @st.cache_data(ttl=1800, show_spinner=False)
 def cached_backtest(strategy):
     """Run + cache a full-universe backtest (heavy: ~1-2 min first time)."""
-    if strategy == "Momentum buying":
-        return backtest.run()
+    if strategy in backtest.STRATEGIES:
+        return backtest.run(strategy=strategy)
     return None
 
 
@@ -2177,11 +2177,16 @@ elif section == "⚖️ Compare":
 # =========================================================================== #
 elif section == "🎯 Backtest":
     st.subheader("🎯 Strategy backtest")
-    strat = st.selectbox("Strategy", ["Momentum buying"], key="bt_strat")
-    st.caption("Long strangle (OTM+3 CE+PE) on a multi-factor momentum burst · "
-               "trailing +100%/−30% · loss −50% · time min(10d, expiry−5). "
-               "Full rules: **strategy.md**. ⚠️ Research/education only — daily (EOD) "
-               "data, **koi trading advice nahi**.")
+    strat = st.selectbox("Strategy", list(backtest.STRATEGIES), key="bt_strat")
+    _desc = {
+        "Momentum buying": "Long strangle (OTM+3 CE+PE) on a multi-factor momentum "
+        "burst · trailing +100%/−30% · loss −50% · time min(10d, expiry−5).",
+        "Momentum directional spread": "Debit spread in the breakout direction "
+        "(bull call / bear put: BUY ATM + SELL OTM+3) · target underlying +7% · "
+        "stop −3% reverse · time min(7d, expiry−3).",
+    }
+    st.caption(_desc.get(strat, "") + " Full rules: **strategy.md**. "
+               "⚠️ Research/education only — daily (EOD) data, **koi trading advice nahi**.")
 
     if st.button("▶️ Run backtest (all ~210 stocks · pehli baar ~1–2 min)", key="bt_run"):
         st.session_state["bt_done"] = True
@@ -2234,11 +2239,12 @@ elif section == "🎯 Backtest":
             steq["cum_rupee"] = steq["pnl_rupee"].cumsum()
             st.line_chart(steq.set_index("exit_date")["cum_rupee"], height=200)
             st.caption("Trade log (is stock ke sab trades):")
-            st.dataframe(st_t[["entry_date", "exit_date", "expiry", "ce_strike", "pe_strike",
-                               "entry_prem", "exit_prem", "pnl_pct", "pnl_rupee", "days_held",
-                               "exit_reason"]]
+            st.dataframe(st_t[["entry_date", "exit_date", "expiry", "structure",
+                               "strike1", "strike2", "entry_prem", "exit_prem", "pnl_pct",
+                               "pnl_rupee", "days_held", "exit_reason"]]
                          .rename(columns={"entry_date": "Entry", "exit_date": "Exit",
-                                          "expiry": "Expiry", "ce_strike": "CE", "pe_strike": "PE",
+                                          "expiry": "Expiry", "structure": "Type",
+                                          "strike1": "K1", "strike2": "K2",
                                           "entry_prem": "In₹", "exit_prem": "Out₹",
                                           "pnl_pct": "P&L%", "pnl_rupee": f"₹({lots}lot)",
                                           "days_held": "Days", "exit_reason": "Why"}),
