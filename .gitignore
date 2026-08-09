@@ -34,3 +34,6 @@ backups/
 
 # Per-stock DB export (large, local)
 database/
+
+# Backtest generated output (local only)
+backtest_*.csv

@@ -32,7 +32,21 @@ MOMENTUM_PARAMS = dict(
     trail_activate_pct=100.0, # trailing turns on at +100%
     trail_pullback_pct=30.0,  # then exit on -30% from peak
     loss_exit_pct=50.0,       # hard loss exit at -50%
+    lots=2,                   # position size (for the rupee P&L column)
 )
+
+
+def lot_sizes(conn):
+    """Per-symbol NSE lot size, derived from futures: lot = value / (contracts ×
+    price). (The `value_lakh` column actually holds value in rupees.) Median per
+    symbol, used only to turn premium-points into a rupee estimate."""
+    fut = pd.read_sql_query(
+        "SELECT symbol, contracts, value_lakh, close FROM futures "
+        "WHERE contracts > 0 AND close > 0", conn)
+    if fut.empty:
+        return pd.Series(dtype=float)
+    fut["lot"] = fut["value_lakh"] / (fut["contracts"] * fut["close"])
+    return fut.groupby("symbol")["lot"].median().round().clip(lower=1)
 
 
 # --------------------------------------------------------------------------- #
@@ -192,25 +206,32 @@ def summarize(trades_df):
     if trades_df.empty:
         return pd.DataFrame(), {}
 
+    has_rup = "pnl_rupee" in trades_df.columns
+
     def _agg(g):
         wins = (g["pnl_points"] > 0).sum()
-        return pd.Series({
+        out = {
             "trades": len(g),
             "win_rate": round(100 * wins / len(g), 1),
+            "total_rupee": int(g["pnl_rupee"].sum()) if has_rup else 0,
             "total_pts": round(g["pnl_points"].sum(), 1),
             "avg_pnl_pct": round(g["pnl_pct"].mean(), 1),
             "best_pct": round(g["pnl_pct"].max(), 1),
             "worst_pct": round(g["pnl_pct"].min(), 1),
-        })
+        }
+        return pd.Series(out)
 
     per_stock = (trades_df.groupby("symbol", group_keys=False).apply(_agg)
-                 .sort_values("total_pts", ascending=False).reset_index())
+                 .sort_values("total_rupee" if has_rup else "total_pts",
+                              ascending=False).reset_index())
     n = len(trades_df)
     wins = int((trades_df["pnl_points"] > 0).sum())
     overall = dict(
         trades=n, stocks=trades_df["symbol"].nunique(),
         win_rate=round(100 * wins / n, 1),
+        total_rupee=int(trades_df["pnl_rupee"].sum()) if has_rup else 0,
         total_pts=round(trades_df["pnl_points"].sum(), 1),
+        avg_rupee=int(trades_df["pnl_rupee"].mean()) if has_rup else 0,
         avg_pnl_pct=round(trades_df["pnl_pct"].mean(), 1),
         best_pct=round(trades_df["pnl_pct"].max(), 1),
         worst_pct=round(trades_df["pnl_pct"].min(), 1),
@@ -239,6 +260,7 @@ def run(symbols=None, params=None, progress=None):
         if symbols is None:
             symbols = pd.read_sql_query(
                 "SELECT DISTINCT symbol FROM options ORDER BY symbol", conn)["symbol"].tolist()
+        lots = lot_sizes(conn)
         all_trades = []
         for i, sym in enumerate(symbols):
             all_trades.extend(run_symbol(conn, sym, p))
@@ -247,5 +269,9 @@ def run(symbols=None, params=None, progress=None):
     finally:
         conn.close()
     trades_df = pd.DataFrame(all_trades)
+    if not trades_df.empty:
+        n_lots = p.get("lots", 2)
+        trades_df["lot"] = trades_df["symbol"].map(lots).fillna(1).astype(int)
+        trades_df["pnl_rupee"] = (trades_df["pnl_points"] * trades_df["lot"] * n_lots).round().astype(int)
     per_stock, overall = summarize(trades_df)
     return trades_df, per_stock, overall, equity_curve(trades_df)

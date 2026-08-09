@@ -2198,21 +2198,25 @@ elif section == "🎯 Backtest":
         else:
             # --- Overall summary cards ---
             st.markdown(f"#### 📊 Overall — *{strat}*")
+            lots = backtest.MOMENTUM_PARAMS.get("lots", 2)
             m = st.columns(6)
-            m[0].metric("Trades", f"{overall['trades']:,}")
-            m[1].metric("Stocks", overall["stocks"])
-            m[2].metric("Win rate", f"{overall['win_rate']}%")
-            m[3].metric("Total (pts)", f"{overall['total_pts']:,.0f}")
+            m[0].metric(f"Total P&L (₹ · {lots} lot)", f"₹{overall['total_rupee']:,}")
+            m[1].metric("Avg ₹ / trade", f"₹{overall['avg_rupee']:,}")
+            m[2].metric("Trades", f"{overall['trades']:,}")
+            m[3].metric("Win rate", f"{overall['win_rate']}%")
             m[4].metric("Avg P&L", f"{overall['avg_pnl_pct']}%")
             m[5].metric("Best / Worst", f"{overall['best_pct']:.0f}% / {overall['worst_pct']:.0f}%")
-            st.caption("Exit breakdown: " + " · ".join(
+            st.caption(f"{overall['stocks']} stocks · exit breakdown: " + " · ".join(
                 f"**{k}** {v}" for k, v in overall["exits"].items())
-                + ". P&L **premium-points (₹/share)** aur **%** me — lot-size independent "
-                "(×lot×2 se rupee P&L).")
+                + f". ₹ = premium-points × derived NSE lot-size × {lots} lots "
+                "(approximate — points/% exact hain).")
 
-            # --- Combined equity curve (cumulative premium points) ---
-            st.markdown("**📈 Equity curve** — cumulative P&L (premium points, exit-date wise)")
-            st.line_chart(eq.set_index("exit_date")["cum_pts"], height=260)
+            # --- Combined equity curve (cumulative rupee P&L) ---
+            eq2 = eq.copy()
+            eq2["cum_rupee"] = (trades.sort_values("exit_date")["pnl_rupee"].cumsum().values
+                                if "pnl_rupee" in trades.columns else eq2["cum_pts"])
+            st.markdown(f"**📈 Equity curve** — cumulative ₹ P&L ({lots} lot, exit-date wise)")
+            st.line_chart(eq2.set_index("exit_date")["cum_rupee"], height=260)
 
             # --- Per-stock drill-down ---
             st.markdown("#### 🔎 Per-stock")
@@ -2220,30 +2224,32 @@ elif section == "🎯 Backtest":
             sel = st.selectbox("Stock", syms, key="bt_sym")
             srow = per_stock[per_stock["symbol"] == sel].iloc[0]
             c = st.columns(5)
-            c[0].metric("Trades", int(srow["trades"]))
-            c[1].metric("Win rate", f"{srow['win_rate']}%")
-            c[2].metric("Total (pts)", f"{srow['total_pts']:,.0f}")
+            c[0].metric("Total ₹", f"₹{int(srow['total_rupee']):,}")
+            c[1].metric("Trades", int(srow["trades"]))
+            c[2].metric("Win rate", f"{srow['win_rate']}%")
             c[3].metric("Avg P&L", f"{srow['avg_pnl_pct']}%")
             c[4].metric("Best / Worst", f"{srow['best_pct']:.0f}% / {srow['worst_pct']:.0f}%")
             st_t = trades[trades["symbol"] == sel].copy()
             steq = st_t.sort_values("exit_date")
-            steq["cum_pts"] = steq["pnl_points"].cumsum()
-            st.line_chart(steq.set_index("exit_date")["cum_pts"], height=200)
+            steq["cum_rupee"] = steq["pnl_rupee"].cumsum()
+            st.line_chart(steq.set_index("exit_date")["cum_rupee"], height=200)
             st.caption("Trade log (is stock ke sab trades):")
             st.dataframe(st_t[["entry_date", "exit_date", "expiry", "ce_strike", "pe_strike",
-                               "entry_prem", "exit_prem", "pnl_pct", "days_held", "exit_reason"]]
+                               "entry_prem", "exit_prem", "pnl_pct", "pnl_rupee", "days_held",
+                               "exit_reason"]]
                          .rename(columns={"entry_date": "Entry", "exit_date": "Exit",
                                           "expiry": "Expiry", "ce_strike": "CE", "pe_strike": "PE",
                                           "entry_prem": "In₹", "exit_prem": "Out₹",
-                                          "pnl_pct": "P&L%", "days_held": "Days",
-                                          "exit_reason": "Why"}),
+                                          "pnl_pct": "P&L%", "pnl_rupee": f"₹({lots}lot)",
+                                          "days_held": "Days", "exit_reason": "Why"}),
                          hide_index=True, width="stretch")
 
             # --- All-stocks sortable table ---
             st.markdown("#### 🗂️ All stocks (sortable — column header click karo)")
-            st.dataframe(per_stock.rename(columns={
+            st.dataframe(per_stock[["symbol", "trades", "win_rate", "total_rupee",
+                                    "avg_pnl_pct", "best_pct", "worst_pct"]].rename(columns={
                 "symbol": "Stock", "trades": "Trades", "win_rate": "Win%",
-                "total_pts": "Total pts", "avg_pnl_pct": "Avg%",
+                "total_rupee": f"Total ₹ ({lots}lot)", "avg_pnl_pct": "Avg%",
                 "best_pct": "Best%", "worst_pct": "Worst%"}),
                 hide_index=True, width="stretch", height=420)
 
