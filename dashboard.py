@@ -170,8 +170,8 @@ HELP_MD = """
 ## 👋 Dashboard kaise use karein
 
 Ye dashboard **F&O stocks (~210)** ka NSE data **date-wise** (din-b-din) dikhata hai —
-equity + futures + options + FII/DII, sab. Data seedha NSE se, roz auto-update. Saari
-analysis **pure maths / stats** hai — **koi technical indicator nahi**.
+equity + futures + options + participant, sab. Data seedha NSE se, roz auto-update. Saari
+analysis **pure maths / stats** hai — **koi technical indicator nahi** (chart pe sirf tools).
 
 > ⚠️ **Educational / research** tool hai — investment advice **nahi**.
 
@@ -180,38 +180,58 @@ analysis **pure maths / stats** hai — **koi technical indicator nahi**.
 ### 🧭 Shuru kaise karein
 1. **Left sidebar** me se ek **stock** choose karo (jaise RELIANCE).
 2. **"Kitne din dekhne hain"** — 7 / 20 / 50 / All chuno.
-3. Sidebar ke **menu** (6 sections) me data dekho (date-wale sections me **slider** se din badlo).
+3. Menu do-level hai — **3 groups** (📈 Per-stock · 🌐 Market-wide · 📊 All-stocks) ke
+   andar total **13 tabs**. Date-wale tabs me **slider** se din badlo.
 
 Upar **ticker** = us din ke **Top 5 gainers** (green) + **Top 5 losers** (red), EOD data se.
 
 ---
 
-## 🗂️ Sections (6)
+## 🗂️ Tabs — 3 groups, 13 total
 
-**📈 Equity / Cash** — Selected stock ka cash-market data, din-b-din: OHLC, **Chg%**
-(green/red pill), **Volume & Delivery%** (bars), Turnover ₹Cr, Trades. Neeche **candle
-chart** (hover = detail). 🟢 up din · 🔴 down din.
+### 📈 Per-stock (chune hue stock ka)
+**Equity / Cash** — cash-market din-b-din: OHLC, **Chg%**, **Volume & Delivery%**, Turnover,
+Trades + candle chart (hover = detail). 🟢 up · 🔴 down.
 
-**🔮 Futures** — Teeno expiry (near/next/far) ka total + changes: OHLC, Settle,
-**Premium** (future − spot), **OI + Chg OI**, Σ TOTAL. Plus estimated participant split.
+**📉 Line chart** — interactive chart: **Line/Candle**, apna timeframe, zoom/crosshair.
+**Data-driven S/R** — swing pivots · Option **OI walls** (Put=support/Call=resist) · volume
+**POC** — + max-pain, σ-bands, 52w hi/lo, **bulk/block deal markers**. Panes: volume, delivery,
+**Fut-OI** (buildup-colored), PCR, premium%, ₹/trade, short. **⚡ Momentum panel** — har
+non-price data aaj apne 7d/20d avg se upar/neeche. *Chart tools + stats only, no indicators.*
 
-**⛓️ Options** — **Σ Sum chain** (teeno expiry ka strike-wise total) + har expiry ka
-apna chain (OHLC/Settle/Turnover chain ke andar hi). 🟧 CALLS ITM · 🟥 PUTS ITM ·
-🔵 **ATM** row · ChgOI green = OI add, red = cut. **Strikes ± slider** + **max pain**.
+**🔬 Analysis** — din-b-din kya badla (kal→aaj) + har signal ka plain-language **"matlab"**
++ us din ke events (deal/ban/corp-action). *Educational interpretation.*
 
-**🏦 Participant** — FII / DII / Pro / Client ka F&O positioning (OI + Volume).
-**Net = Long − Short**: 🟢 net long (bullish), 🔴 net short (bearish). Ye **market-wide** hai.
+**🔮 Futures** — teeno expiry ka OHLC/Settle, **Premium**, **OI + Chg OI**, Σ total, buildup.
 
-**📊 Math stats** — Saare ~210 stocks ka computed math ek table me. **Sort by** se compare
-karo (+ **1D/1W/1M returns**). Symbol + header pinned; right scroll = saare columns.
+**⛓️ Options** — Sensibull-style chain: **Σ Sum chain** + har expiry, ITM shading, **ATM** row,
+ChgOI, **PCR + max pain**, OI support/resistance.
 
-**🌐 Market** — NIFTY 50 / BANK / FINNIFTY charts + India VIX + broad & sectoral index
-table (official, 1D/1W/1M) + humare F&O stocks ka **sector performance** (avg 1D/1W/1M/1Y)
-+ drill-down + day-by-day sector scrub.
+### 🌐 Market-wide
+**🏦 Participant** — FII / DII / Pro / Client F&O positioning (OI + Volume). **Net = Long−Short**:
+🟢 bullish · 🔴 bearish. Smart-money read (saare segments). *Market-wide.*
 
-**⚖️ Compare** — 2–5 stocks side-by-side, saare metrics ek saath.
+**🌐 Market** — NIFTY 50 / BANK / FINNIFTY + India VIX + sectoral index table + humare F&O
+stocks ka **sector performance** (1D/1W/1M/1Y) + drill-down.
 
-**🩺 Data health** — pipeline status: latest dates, gaps, row counts, current F&O ban list.
+### 📊 All-stocks
+**📊 Math stats** — saare ~210 stocks ka computed math ek sortable table me (+ 1D/1W/1M returns).
+
+**🔎 Stocks filter** — **24 per-stock rules** (+2 buyer IV rules optional). **Screener**: filters
+on/off → un sab pe pass karne wale stocks. **Per-stock 24-line checklist** + **score leaderboard**
+(kis stock pe sabse zyada rules pass).
+
+**🛒 Option buyer** — **IV Rank & Greeks** (Black-Scholes se). Golden rule: **buy low IV** —
+IV Rank **≤30 = sasta** (buy-zone) · **>70 = mehenga**. Buy-zone leaderboard + per-stock
+IV/Greeks/theta + **1-saal IV history chart**.
+
+**⚖️ Compare** — 2–5 stocks side-by-side.
+
+**🎯 Backtest** — option strategies (Momentum buying / directional spread / single buy) sab stocks
+pe. Overall + **per-stock P&L** + equity curve + trade-log. Optional **🛒 IV gate** (sirf low-IV pe
+buy). *Research/education only — advice nahi.*
+
+**🩺 Data health** — pipeline status: latest dates, gaps, row counts, F&O ban list.
 
 ---
 
@@ -257,6 +277,17 @@ Sab **split/bonus-adjusted**. Daily return `r = aaj close / kal close − 1`.
 | Futures premium | `near future close − spot` | +ve bullish lean · −ve bearish lean |
 | Total OI | futures OI sum (all expiry) | Kitne contracts open |
 | OI change | Chg OI sum (all expiry) | Naye positions (+) ya band (−) |
+
+**Option buyer (Black-Scholes se — 🛒 Option buyer tab)**
+
+| Metric | Kya | Matlab |
+|---|---|---|
+| Implied Vol (IV) | option price se back-calculate | market kitni volatility expect kar raha |
+| **IV Rank** | aaj ka IV apne **52-week** range me (0–100) | **≤30 = option sasta** (buy-friendly) · **>70 = mehenga** |
+| Delta | price sensitivity (ATM ~0.5) | 1 point stock move pe option kitna badle |
+| **Theta** | daily time-decay (₹/day) | buyer ka **dushman** — roz premium ghisata |
+| Vega | +1% IV pe premium change | IV badhe to buyer ko fayda |
+| IV / HV | IV vs realized vol | <1 = option realized-move se bhi sasta |
 
 **OI Buildup** (price + OI change)
 
