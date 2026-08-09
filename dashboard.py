@@ -22,6 +22,7 @@ import db
 import analysis
 import charts
 import backtest
+import stock_filters
 import sectors
 from render import (  # presentation layer (HTML tables + CSS)
     _fmt, CHAIN_LEGEND, _seg_metrics,
@@ -534,6 +535,12 @@ def cached_sum_chain(symbol, date):
     return analysis.sum_chain(symbol, date)
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_filters():
+    """Run + cache the 24-rule per-stock filter evaluation (all F&O stocks)."""
+    return stock_filters.compute()
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def cached_backtest(strategy):
     """Run + cache a full-universe backtest (heavy: ~1-2 min first time)."""
@@ -702,7 +709,7 @@ def _trend5(dd, key, sel, n=5):
 GROUPS = {
     "📈 Per-stock": ["📈 Equity / Cash", "📉 Line chart", "🔬 Analysis", "🔮 Futures", "⛓️ Options"],
     "🌐 Market-wide": ["🏦 Participant", "🌐 Market"],
-    "📊 All-stocks": ["📊 Math stats", "⚖️ Compare", "🎯 Backtest", "🩺 Data health"],
+    "📊 All-stocks": ["📊 Math stats", "🔎 Stocks filter", "⚖️ Compare", "🎯 Backtest", "🩺 Data health"],
 }
 GROUP_KEYS = list(GROUPS)
 
@@ -2123,6 +2130,68 @@ elif section == "🌐 Market":
         st.plotly_chart(dfig, width="stretch")
         st.caption("Slider se **pichhle din scrub** karo — us din kaunsa sector chala/gira "
                    "(din-b-din sector rotation).")
+
+
+# =========================================================================== #
+# TAB — Stocks filter (24 per-stock rules: screener + per-stock checklist)
+# =========================================================================== #
+elif section == "🔎 Stocks filter":
+    st.subheader("🔎 Stocks filter")
+    st.caption("24 per-stock rules, **aaj ke data pe**. Neeche filters on/off karo → un "
+               "sab pe pass karne wale stocks. Phir ek stock ka 24-line pass/fail. "
+               "⚠️ Research/education only — koi trading advice nahi.")
+
+    with st.spinner("Filters compute ho rahe hain (sab stocks)…"):
+        pdf, vdf, meta = cached_filters()
+    st.caption(f"📅 Data: prices **{meta['price_date']}** · F&O **{meta['opt_date']}** "
+               f"· {len(pdf)} stocks")
+
+    labels = {n: lab for n, _g, lab, _r in stock_filters.FILTERS}
+    rules = {n: r for n, _g, lab, r in stock_filters.FILTERS}
+
+    # ---------------- Screener ----------------
+    st.markdown("#### 🎛️ Screener — filters chuno")
+    sel = []
+    for grp in ["Price", "Futures", "Options", "Events", "Stats"]:
+        gf = [f for f in stock_filters.FILTERS if f[1] == grp]
+        st.markdown(f"**{grp}**")
+        cols = st.columns(3)
+        for i, (n, _g, lab, rule) in enumerate(gf):
+            npass = int(pdf[n].fillna(False).sum())
+            if cols[i % 3].checkbox(f"{n}. {lab} · {npass}", key=f"flt{n}", help=rule):
+                sel.append(n)
+
+    if not sel:
+        st.info("Koi filter select nahi kiya — upar se rules choose karo.")
+    else:
+        need = st.slider("Kitne selected filters pass hone chahiye",
+                         1, len(sel), len(sel), key="flt_need")
+        cnt = pdf[sel].fillna(False).sum(axis=1)
+        passing = list(pdf.index[cnt >= need])
+        st.success(f"**{len(passing)}** stocks — {need}/{len(sel)} selected filters pass karte hain")
+        if passing:
+            show = vdf.loc[passing, sel].copy()
+            show.columns = [f"{n}. {labels[n]}" for n in sel]
+            show.insert(0, "✔ pass", cnt.loc[passing].astype(int))
+            show = show.sort_values("✔ pass", ascending=False)
+            st.dataframe(show, width="stretch", height=420)
+        st.caption("Rules: " + " · ".join(f"**{n}** {rules[n]}" for n in sel))
+
+    # ---------------- Per-stock checklist ----------------
+    st.divider()
+    st.markdown("#### ✅ Per-stock checklist — 24 rules")
+    fsym = st.selectbox("Stock", list(pdf.index), key="flt_sym")
+    score = int(pdf.loc[fsym].fillna(False).sum())
+    st.metric(f"{fsym} — filters pass", f"{score} / 24")
+    c1, c2 = st.columns(2)
+    half = (len(stock_filters.FILTERS) + 1) // 2
+    for col, chunk in ((c1, stock_filters.FILTERS[:half]), (c2, stock_filters.FILTERS[half:])):
+        md = []
+        for n, _g, lab, rule in chunk:
+            ok = bool(pdf.loc[fsym, n]) if pd.notna(pdf.loc[fsym, n]) else False
+            md.append(f"{'🟢' if ok else '🔴'} **{n}. {lab}** — {vdf.loc[fsym, n]}  \n"
+                      f"<span style='color:#888;font-size:.85em'>{rule}</span>")
+        col.markdown("\n\n".join(md), unsafe_allow_html=True)
 
 
 # =========================================================================== #
