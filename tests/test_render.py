@@ -53,13 +53,3 @@ def test_render_stock_table_empty():
     assert "<table" in html
 
 
-# --------------------------------------------------------------------------- #
-# option-chain sentiment / picks helpers
-# --------------------------------------------------------------------------- #
-def test_senti_labels():
-    # strong bullish, mild, indecisive, bearish
-    assert render._senti(0.5) == ("Strong Bullish", "bull", 0.95)
-    assert render._senti(0.2)[0] == "Medium Bullish"
-    assert render._senti(0.08)[0] == "Mild Bullish"
-    assert render._senti(0.0)[1] == "neu"          # indecisive
-    assert render._senti(-0.5)[0] == "Strong Bearish"

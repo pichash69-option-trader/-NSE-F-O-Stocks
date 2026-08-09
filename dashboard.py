@@ -1552,10 +1552,6 @@ elif section == "🔬 Analysis":
             if not vx.empty and pd.notna(vx["close"].iloc[0]):
                 lines.append(f"- **India VIX (us din):** {vx['close'].iloc[0]:.2f} "
                              "(market fear level — high = risk-off)")
-            fd = q("SELECT category, net FROM fii_dii WHERE date=?", (sel,))
-            if not fd.empty:
-                lines.append("- **FII/DII cash (market-wide, us din):** " +
-                             " · ".join(f"{r.category} net ₹{r.net:+,.0f} Cr" for r in fd.itertuples()))
             st.markdown("\n".join(lines) if lines else "Is din ka extra data nahi.")
             st.caption("Ye market-wide / secondary signals hain — single-stock ke liye context, "
                        "primary nahi.")
@@ -1814,51 +1810,6 @@ elif section == "⛓️ Options":
 # =========================================================================== #
 elif section == "🏦 Participant":
     st.subheader("FII / DII / Pro / Client — F&O positions")
-
-    # --- FII/DII CASH-segment provisional flows (₹ crore) — profile charts ---
-    cash = q("SELECT date, category, buy, sell, net FROM fii_dii ORDER BY date")
-    if not cash.empty:
-        latest = cash["date"].max()
-        today = cash[cash["date"] == latest]
-        st.markdown(f"#### 💰 FII/DII cash flows — provisional (₹ Cr) · {latest}")
-        CATS = [c for c in ["FII/FPI", "DII"] if c in today["category"].values]
-
-        def _v(cat, col):
-            r = today[today["category"] == cat]
-            return float(r[col].iloc[0]) if not r.empty else 0.0
-
-        fc1, fc2 = st.columns(2)
-        with fc1:
-            st.caption("**Buy / Sell / Net — aaj (₹ Cr)**")
-            bfig = go.Figure()
-            bfig.add_trace(go.Bar(x=CATS, y=[_v(c, "buy") for c in CATS],
-                                  name="Buy", marker_color="#10b981"))
-            bfig.add_trace(go.Bar(x=CATS, y=[_v(c, "sell") for c in CATS],
-                                  name="Sell", marker_color="#f43f5e"))
-            bfig.add_trace(go.Bar(x=CATS, y=[_v(c, "net") for c in CATS],
-                                  name="Net", marker_color="#6366f1"))
-            bfig.update_layout(barmode="group", height=250, margin=dict(l=0, r=0, t=6, b=0),
-                               legend=dict(orientation="h", y=1.2), yaxis_title="₹ Cr")
-            st.plotly_chart(bfig, width="stretch", key="fd_bsn")
-        with fc2:
-            st.caption("**Daily net flow (accumulating din)**")
-            piv = cash.pivot_table(index="date", columns="category", values="net").sort_index()
-            nfig = go.Figure()
-            for cat, color in [("FII/FPI", "#6366f1"), ("DII", "#f59e0b")]:
-                if cat in piv.columns:
-                    nfig.add_trace(go.Bar(x=piv.index, y=piv[cat], name=cat, marker_color=color))
-            nfig.add_hline(y=0, line_color="#6b7280")
-            nfig.update_layout(barmode="group", height=250, margin=dict(l=0, r=0, t=6, b=0),
-                               legend=dict(orientation="h", y=1.2), yaxis_title="Net ₹Cr")
-            nfig.update_xaxes(type="category")
-            st.plotly_chart(nfig, width="stretch", key="fd_flow")
-
-        st.caption("🟢 Net **+** = **buying** · 🔴 net **−** = **selling**. NSE sirf latest din "
-                   "publish karta hai (no archive) — history roz accumulate hoti hai.")
-        if cash["date"].nunique() >= 3:
-            st.caption("**🌊 Cumulative net** (window start se):")
-            st.line_chart(piv.cumsum(), height=180)
-        st.divider()
 
     pdates = q("SELECT DISTINCT date FROM participant ORDER BY date DESC")["date"].tolist()
     if not pdates:

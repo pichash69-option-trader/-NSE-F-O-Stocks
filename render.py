@@ -360,20 +360,6 @@ def _seg_metrics(r):
     }
 
 
-def _senti(score):
-    """(label, dirn, opacity) from a −1..+1 sentiment score (net / gross)."""
-    a = abs(score)
-    if a < 0.05:
-        return ("Indecisive", "neu", 0.0)
-    word = "Bullish" if score > 0 else "Bearish"
-    dirn = "bull" if score > 0 else "bear"
-    lvl, op = (("Strong", 0.95) if a >= 0.33 else
-               ("Medium", 0.72) if a >= 0.15 else ("Mild", 0.5))
-    return (f"{lvl} {word}", dirn, op)
-
-
-
-
 
 
 # --------------------------------------------------------------------------- #
