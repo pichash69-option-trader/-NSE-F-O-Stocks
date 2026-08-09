@@ -542,6 +542,12 @@ def cached_filters():
     return stock_filters.compute()
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def cached_filters_iv():
+    """24 rules + the 2 buyer IV filters (needs the ~2-min IV compute)."""
+    return stock_filters.compute(iv_df=cached_iv_all())
+
+
 @st.cache_data(ttl=1800, show_spinner=False)
 def cached_iv_all():
     """Cache the per-stock IV / IV-Rank / Greeks snapshot (~2 min first run)."""
@@ -2153,14 +2159,19 @@ elif section == "🌐 Market":
 # =========================================================================== #
 elif section == "🔎 Stocks filter":
     st.subheader("🔎 Stocks filter")
-    st.caption("24 per-stock rules, **aaj ke data pe**. Neeche filters on/off karo → un "
-               "sab pe pass karne wale stocks. Phir ek stock ka 24-line pass/fail. "
+    st.caption("Per-stock rules, **aaj ke data pe**. Neeche filters on/off karo → un "
+               "sab pe pass karne wale stocks. Phir ek stock ka full pass/fail. "
                "⚠️ Research/education only — koi trading advice nahi.")
 
-    with st.spinner("Filters compute ho rahe hain (sab stocks)…"):
-        pdf, vdf, meta = cached_filters()
+    use_iv = st.toggle("🛒 Buyer ke liye **IV filters** bhi add karo (25. IV Rank ≤30, "
+                       "26. IV/HV<1) — pehli baar ~2 min compute", value=False, key="flt_iv")
+    with st.spinner("Filters compute ho rahe hain…" + (" (+ IV Rank, ~2 min)" if use_iv else "")):
+        pdf, vdf, meta = cached_filters_iv() if use_iv else cached_filters()
+    ntot = len(pdf.columns)
+    avail = set(pdf.columns)
     st.caption(f"📅 Data: prices **{meta['price_date']}** · F&O **{meta['opt_date']}** "
-               f"· {len(pdf)} stocks")
+               f"· {len(pdf)} stocks · **{ntot} rules**"
+               + (" (IV included 🛒)" if use_iv else ""))
 
     labels = {n: lab for n, _g, lab, _r in stock_filters.FILTERS}
     rules = {n: r for n, _g, lab, r in stock_filters.FILTERS}
@@ -2168,8 +2179,10 @@ elif section == "🔎 Stocks filter":
     # ---------------- Screener ----------------
     st.markdown("#### 🎛️ Screener — filters chuno")
     sel = []
-    for grp in ["Price", "Futures", "Options", "Events", "Stats"]:
-        gf = [f for f in stock_filters.FILTERS if f[1] == grp]
+    for grp in ["Price", "Futures", "Options", "Events", "Stats", "IV (buyer)"]:
+        gf = [f for f in stock_filters.FILTERS if f[1] == grp and f[0] in avail]
+        if not gf:
+            continue
         st.markdown(f"**{grp}**")
         cols = st.columns(3)
         for i, (n, _g, lab, rule) in enumerate(gf):
@@ -2204,10 +2217,10 @@ elif section == "🔎 Stocks filter":
 
     # ---------------- Per-stock checklist ----------------
     st.divider()
-    st.markdown("#### ✅ Per-stock checklist — 24 rules")
+    st.markdown(f"#### ✅ Per-stock checklist — {ntot} rules")
 
-    # 🏆 Leaderboard — which stocks pass the MOST rules (all 24, or your selection)
-    basis = st.radio("Ranking kis par", ["All 24 rules", "Selected filters only"],
+    # 🏆 Leaderboard — which stocks pass the MOST rules (all, or your selection)
+    basis = st.radio("Ranking kis par", [f"All {ntot} rules", "Selected filters only"],
                      horizontal=True, key="flt_rankbasis")
     rank_cols = sel if (basis == "Selected filters only" and sel) else list(pdf.columns)
     scores = pdf[rank_cols].fillna(False).sum(axis=1).astype(int)
@@ -2224,10 +2237,11 @@ elif section == "🔎 Stocks filter":
     # per-stock detail — dropdown sorted by score (top first)
     fsym = st.selectbox("Stock (score se sorted)", list(ranked.index), key="flt_sym")
     score = int(pdf.loc[fsym].fillna(False).sum())
-    st.metric(f"{fsym} — filters pass", f"{score} / 24")
+    st.metric(f"{fsym} — filters pass", f"{score} / {ntot}")
     c1, c2 = st.columns(2)
-    half = (len(stock_filters.FILTERS) + 1) // 2
-    for col, chunk in ((c1, stock_filters.FILTERS[:half]), (c2, stock_filters.FILTERS[half:])):
+    avail_filters = [f for f in stock_filters.FILTERS if f[0] in avail]
+    half = (len(avail_filters) + 1) // 2
+    for col, chunk in ((c1, avail_filters[:half]), (c2, avail_filters[half:])):
         md = []
         for n, _g, lab, rule in chunk:
             ok = bool(pdf.loc[fsym, n]) if pd.notna(pdf.loc[fsym, n]) else False

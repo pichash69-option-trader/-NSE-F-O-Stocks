@@ -40,6 +40,9 @@ FILTERS = [
     (22, "Stats",   "52-week percentile",    "pct_rank_52w ≥ 80"),
     (23, "Stats",   "Relative strength",     "stock chg% > Nifty chg%"),
     (24, "Stats",   "Volatility band",       "ann_vol 20–60%"),
+    # 25-26 are BUYER-specific and only filled when IV data is supplied.
+    (25, "IV (buyer)", "IV Rank low (cheap)",       "IV Rank ≤ 30 (buy-friendly)"),
+    (26, "IV (buyer)", "IV cheaper than realized",  "IV/HV < 1"),
 ]
 FILTER_NUMS = [f[0] for f in FILTERS]
 
@@ -109,7 +112,7 @@ def _options_latest(conn):
     return p, d
 
 
-def compute():
+def compute(iv_df=None):
     """Return (passes, values, meta): passes = bool DataFrame [symbol × f1..f24],
     values = str DataFrame for display, meta = dict of latest dates."""
     conn = db.connect()
@@ -240,10 +243,17 @@ def compute():
             av = strow["ann_volatility"] * 100 if strow is not None and pd.notna(strow["ann_volatility"]) else np.nan
             put(24, pd.notna(av) and 20 <= av <= 60, f"{av:.0f}%" if pd.notna(av) else "—")
 
+            # 25-26: buyer IV filters — only when an IV snapshot is supplied
+            if iv_df is not None and sym in iv_df.index:
+                ivr = iv_df.loc[sym, "iv_rank"]
+                ivh = iv_df.loc[sym, "iv_hv"]
+                put(25, pd.notna(ivr) and ivr <= 30, f"{ivr:.0f}" if pd.notna(ivr) else "—")
+                put(26, pd.notna(ivh) and ivh < 1, f"{ivh:.2f}" if pd.notna(ivh) else "—")
+
             passes[sym] = f
             values[sym] = v
 
-        cols = FILTER_NUMS
+        cols = FILTER_NUMS if iv_df is not None else [n for n in FILTER_NUMS if n <= 24]
         pdf = pd.DataFrame(passes).T.reindex(columns=cols)
         vdf = pd.DataFrame(values).T.reindex(columns=cols)
         meta = dict(price_date=str(price["date"].iloc[0]) if len(price) else "—",
