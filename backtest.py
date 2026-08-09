@@ -46,9 +46,15 @@ SPREAD_PARAMS.update(dict(
     stop_move_pct=3.0,        # exit when it reverses -3% against
 ))
 
+# "Momentum single buy" — directional single-leg long (up -> BUY CE, down ->
+# BUY PE) at ATM. Same trailing/loss/time exit as the strangle, but one leg.
+SINGLE_PARAMS = dict(MOMENTUM_PARAMS)
+SINGLE_PARAMS.update(dict(strike_offset=0))   # 0 = ATM (OTM = +N steps away)
+
 STRATEGIES = {
     "Momentum buying": MOMENTUM_PARAMS,
     "Momentum directional spread": SPREAD_PARAMS,
+    "Momentum single buy": SINGLE_PARAMS,
 }
 
 
@@ -258,6 +264,79 @@ def _manage_spread(conn, symbol, expiry, ot, long_k, short_k, entry_date,
                 pnl_points=val - debit, days_held=len(dates), exit_reason="dataend")
 
 
+def _setup_single(conn, symbol, entry_date, spot, direction, p):
+    """Single directional long: up -> CE, down -> PE, at ATM + strike_offset.
+    Returns (expiry, opt_type, strike, entry_prem) or None."""
+    exps = pd.read_sql_query(
+        "SELECT DISTINCT expiry FROM options WHERE symbol=? AND date=? ORDER BY expiry",
+        conn, params=(symbol, entry_date))["expiry"].tolist()
+    ed = pd.Timestamp(entry_date)
+    expiry = next((e for e in exps if (pd.Timestamp(e) - ed).days >= p["dte_min"]), None)
+    if expiry is None:
+        return None
+    ot = "CE" if direction == "up" else "PE"
+    chain = pd.read_sql_query(
+        "SELECT strike,close,oi,volume FROM options "
+        "WHERE symbol=? AND date=? AND expiry=? AND opt_type=?",
+        conn, params=(symbol, entry_date, expiry, ot))
+    if chain.empty:
+        return None
+    strikes = np.sort(chain["strike"].unique())
+    atm_i = int(np.abs(strikes - spot).argmin())
+    off = p.get("strike_offset", 0)
+    k_i = atm_i + (off if ot == "CE" else -off)
+    if k_i < 0 or k_i >= len(strikes):
+        return None
+    k = float(strikes[k_i])
+    row = chain[chain.strike == k]
+    if row.empty:
+        return None
+    row = row.iloc[0]
+    if row.oi < p["leg_oi_min"] or row.volume < p["leg_vol_min"]:
+        return None
+    prem = float(row.close)
+    if prem <= 0:
+        return None
+    return expiry, ot, k, prem
+
+
+def _manage_single(conn, symbol, expiry, ot, k, entry_date, entry_prem, p):
+    """Walk a single long option's premium (trailing / loss / time exit)."""
+    rows = pd.read_sql_query(
+        "SELECT date,close FROM options WHERE symbol=? AND expiry=? AND opt_type=? "
+        "AND strike=? AND date>=? ORDER BY date",
+        conn, params=(symbol, expiry, ot, k, entry_date))
+    if rows.empty:
+        return None
+    s = rows.set_index("date")["close"].ffill().dropna()
+    dates = [d for d in s.index if d > entry_date]
+    if not dates:
+        return None
+    exp_cut = pd.Timestamp(expiry) - pd.Timedelta(days=p["exit_before_expiry"])
+    peak = entry_prem
+    for i, d in enumerate(dates, start=1):
+        val = float(s[d])
+        peak = max(peak, val)
+        pnl = (val / entry_prem - 1) * 100
+        peak_pnl = (peak / entry_prem - 1) * 100
+        reason = None
+        if pnl <= -p["loss_exit_pct"]:
+            reason = "loss"
+        elif peak_pnl >= p["trail_activate_pct"] and val <= peak * (1 - p["trail_pullback_pct"] / 100):
+            reason = "trail"
+        elif i >= p["hold_days"]:
+            reason = "time"
+        elif pd.Timestamp(d) >= exp_cut:
+            reason = "expiry"
+        if reason:
+            return dict(exit_date=d, exit_prem=round(val, 2), pnl_pct=pnl,
+                        pnl_points=val - entry_prem, days_held=i, exit_reason=reason)
+    d = dates[-1]
+    val = float(s[d])
+    return dict(exit_date=d, exit_prem=round(val, 2), pnl_pct=(val / entry_prem - 1) * 100,
+                pnl_points=val - entry_prem, days_held=len(dates), exit_reason="dataend")
+
+
 def run_symbol(conn, symbol, p, strategy="Momentum buying", ban_dates=None):
     """Backtest one stock. Returns a list of trade dicts (no overlapping trades)."""
     px = pd.read_sql_query(
@@ -275,6 +354,14 @@ def run_symbol(conn, symbol, p, strategy="Momentum buying", ban_dates=None):
             "SELECT date FROM secban WHERE symbol=?", conn, params=(symbol,))["date"])
     spots = px.set_index("date")["close"]
     is_spread = strategy == "Momentum directional spread"
+    is_single = strategy == "Momentum single buy"
+
+    def _direction(r):
+        if pd.notna(r.roll_hi) and r.close > r.roll_hi:
+            return "up"
+        if pd.notna(r.roll_lo) and r.close < r.roll_lo:
+            return "down"
+        return "up" if r.chg_pct >= 0 else "down"
 
     trades, busy_until = [], ""
     for r in px.itertuples():
@@ -282,15 +369,19 @@ def run_symbol(conn, symbol, p, strategy="Momentum buying", ban_dates=None):
             continue
         if r.date in ban_dates:
             continue
-        if is_spread:
-            # direction from the breakout (else the day's price move)
-            if pd.notna(r.roll_hi) and r.close > r.roll_hi:
-                direction = "up"
-            elif pd.notna(r.roll_lo) and r.close < r.roll_lo:
-                direction = "down"
-            else:
-                direction = "up" if r.chg_pct >= 0 else "down"
-            setup = _setup_spread(conn, symbol, r.date, float(r.close), direction, p)
+        if is_single:
+            setup = _setup_single(conn, symbol, r.date, float(r.close), _direction(r), p)
+            if setup is None:
+                continue
+            expiry, ot, k, prem = setup
+            res = _manage_single(conn, symbol, expiry, ot, k, r.date, prem, p)
+            if res is None:
+                continue
+            head = dict(symbol=symbol, entry_date=r.date, expiry=expiry,
+                        structure="long CE" if ot == "CE" else "long PE",
+                        strike1=k, strike2=None, entry_prem=round(prem, 2))
+        elif is_spread:
+            setup = _setup_spread(conn, symbol, r.date, float(r.close), _direction(r), p)
             if setup is None:
                 continue
             expiry, ot, long_k, short_k, debit = setup

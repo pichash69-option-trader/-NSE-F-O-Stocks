@@ -2184,6 +2184,8 @@ elif section == "🎯 Backtest":
         "Momentum directional spread": "Debit spread in the breakout direction "
         "(bull call / bear put: BUY ATM + SELL OTM+3) · target underlying +7% · "
         "stop −3% reverse · time min(7d, expiry−3).",
+        "Momentum single buy": "Single directional long — up→BUY ATM CE, "
+        "down→BUY ATM PE · trailing +100%/−30% · loss −50% · time min(10d, expiry−5).",
     }
     st.caption(_desc.get(strat, "") + " Full rules: **strategy.md**. "
                "⚠️ Research/education only — daily (EOD) data, **koi trading advice nahi**.")

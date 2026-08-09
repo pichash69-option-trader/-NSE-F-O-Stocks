@@ -92,3 +92,20 @@ Long-only strangles bleed theta and pay twice; a directional spread uses the
 signal's direction, collects premium on the short leg, and caps risk. In the
 full backtest this lifts win-rate ~28% → ~40% and cuts the net loss by ~73%
 (near break-even) — still net-negative overall, so: **research, not advice.**
+
+---
+
+## 3. Momentum single buy
+
+Pure directional **single-leg long** on the same momentum entry — no second leg,
+no selling. Direction from the breakout: **up → BUY ATM CE**, **down → BUY ATM PE**
+(`strike_offset` shifts to OTM). Exit is the strangle's: trailing **+100%
+activate / −30% pullback**, loss **−50%**, time **min(10 trading days,
+expiry − 5 days)**, on the single option's premium. Size 2 lots.
+
+**Backtest reality:** despite being the "simplest" idea, this is the *worst* of
+the three on the full universe — win-rate ~31%, and unhedged long options decay
+hardest, so ~1,070 of ~1,940 trades hit the −50% loss. A directional bet with no
+short-leg cushion loses more when it's wrong, which it is ~68% of the time here.
+Confirms the earlier point: **buying options is structurally hard.** Research,
+not advice.
