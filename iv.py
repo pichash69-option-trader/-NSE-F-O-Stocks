@@ -188,7 +188,7 @@ def _latest_atm_greeks(conn, symbol):
     T = _t_years(d, exp)
     iv = implied_vol(price, S, k, T, call=True)
     if not iv:
-        return dict(**blank, )
+        return blank
     g = greeks(S, k, T, iv, call=True)
     return dict(delta=round(g["delta"], 2), theta=round(g["theta"], 1),
                 gamma=round(g["gamma"], 4), vega=round(g["vega"], 1),
