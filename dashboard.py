@@ -2162,19 +2162,28 @@ elif section == "🔎 Stocks filter":
                 sel.append(n)
 
     if not sel:
-        st.info("Koi filter select nahi kiya — upar se rules choose karo.")
+        st.info("👆 Upar se ek ya zyada filter **checkbox** on karo — passing stocks yahan aayenge.")
     else:
-        need = st.slider("Kitne selected filters pass hone chahiye",
-                         1, len(sel), len(sel), key="flt_need")
+        # slider only makes sense with 2+ filters (min must be < max)
+        if len(sel) > 1:
+            need = st.slider("Kitne selected filters pass hone chahiye (AND = sab)",
+                             1, len(sel), len(sel), key="flt_need")
+        else:
+            need = 1
         cnt = pdf[sel].fillna(False).sum(axis=1)
         passing = list(pdf.index[cnt >= need])
-        st.success(f"**{len(passing)}** stocks — {need}/{len(sel)} selected filters pass karte hain")
+        st.success(f"✅ **{len(passing)}** stocks — {need} / {len(sel)} selected filter"
+                   f"{'s' if len(sel) > 1 else ''} pass karte hain "
+                   f"(selected: {', '.join(f'#{n}' for n in sel)})")
         if passing:
             show = vdf.loc[passing, sel].copy()
             show.columns = [f"{n}. {labels[n]}" for n in sel]
             show.insert(0, "✔ pass", cnt.loc[passing].astype(int))
             show = show.sort_values("✔ pass", ascending=False)
             st.dataframe(show, width="stretch", height=420)
+        else:
+            st.warning("In filters pe aaj koi stock pass nahi kar raha — thode kam/aasan "
+                       "filters chuno, ya slider se 'kitne pass' kam karo.")
         st.caption("Rules: " + " · ".join(f"**{n}** {rules[n]}" for n in sel))
 
     # ---------------- Per-stock checklist ----------------
