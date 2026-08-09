@@ -23,6 +23,7 @@ import analysis
 import charts
 import backtest
 import stock_filters
+import iv as ivmod
 import sectors
 from render import (  # presentation layer (HTML tables + CSS)
     _fmt, CHAIN_LEGEND, _seg_metrics,
@@ -542,6 +543,21 @@ def cached_filters():
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
+def cached_iv_all():
+    """Cache the per-stock IV / IV-Rank / Greeks snapshot (~2 min first run)."""
+    return ivmod.compute_all()
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def cached_iv_history(symbol):
+    conn = db.connect()
+    try:
+        return ivmod.atm_iv_history(conn, symbol)
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=1800, show_spinner=False)
 def cached_backtest(strategy):
     """Run + cache a full-universe backtest (heavy: ~1-2 min first time)."""
     if strategy in backtest.STRATEGIES:
@@ -709,7 +725,7 @@ def _trend5(dd, key, sel, n=5):
 GROUPS = {
     "📈 Per-stock": ["📈 Equity / Cash", "📉 Line chart", "🔬 Analysis", "🔮 Futures", "⛓️ Options"],
     "🌐 Market-wide": ["🏦 Participant", "🌐 Market"],
-    "📊 All-stocks": ["📊 Math stats", "🔎 Stocks filter", "⚖️ Compare", "🎯 Backtest", "🩺 Data health"],
+    "📊 All-stocks": ["📊 Math stats", "🔎 Stocks filter", "🛒 Option buyer", "⚖️ Compare", "🎯 Backtest", "🩺 Data health"],
 }
 GROUP_KEYS = list(GROUPS)
 
@@ -2218,6 +2234,98 @@ elif section == "🔎 Stocks filter":
             md.append(f"{'🟢' if ok else '🔴'} **{n}. {lab}** — {vdf.loc[fsym, n]}  \n"
                       f"<span style='color:#888;font-size:.85em'>{rule}</span>")
         col.markdown("\n\n".join(md), unsafe_allow_html=True)
+
+
+# =========================================================================== #
+# TAB — Option buyer (IV Rank / Greeks — "buy low IV")
+# =========================================================================== #
+elif section == "🛒 Option buyer":
+    st.subheader("🛒 Option buyer — IV Rank & Greeks")
+    st.caption("Buyer ka golden rule: **buy low IV**. **IV Rank < 30** = option apne "
+               "52-week range me **sasta** (buy-friendly) · **> 70** = mehenga (IV-crush "
+               "risk, avoid). ⚠️ Research/education only — koi trading advice nahi.")
+
+    if st.button("▶️ IV compute karo (sab stocks · pehli baar ~1–2 min)", key="iv_run"):
+        st.session_state["iv_done"] = True
+    if not st.session_state.get("iv_done"):
+        st.info("Upar **IV compute karo** dabao — Black-Scholes se sab stocks ka IV / "
+                "IV-Rank / Greeks niklega (cache ho jayega, dobara instant).")
+    else:
+        with st.spinner("IV / IV-Rank / Greeks compute ho raha hai…"):
+            ivdf = cached_iv_all()
+
+        if ivdf is None or ivdf.empty:
+            st.warning("IV compute nahi hua (options data adhoora ho sakta hai).")
+        else:
+            buyzone = int((ivdf["iv_rank"] <= 30).sum())
+            c = st.columns(4)
+            c[0].metric("Stocks", len(ivdf))
+            c[1].metric("🟢 Buy-zone (IV Rank ≤30)", buyzone)
+            c[2].metric("Cheapest", f"{ivdf.index[0]} ({ivdf.iloc[0]['iv_rank']:.0f})")
+            c[3].metric("Priciest", f"{ivdf.index[-1]} ({ivdf.iloc[-1]['iv_rank']:.0f})")
+
+            # ---- Buy-zone leaderboard ----
+            st.markdown("#### 🟢 Sabse saste (IV Rank low = buy zone)")
+            maxrank = st.slider("IV Rank ≤ (itne se sasta dikhao)", 0, 100, 30, key="iv_maxrank")
+            cheap = ivdf[ivdf["iv_rank"] <= maxrank].copy()
+            st.caption(f"**{len(cheap)}** stocks — IV Rank ≤ {maxrank}. "
+                       "IV/HV < 1 = option realized-move se bhi sasta.")
+            show = cheap[["iv", "iv_rank", "iv_pctile", "hv", "iv_hv", "delta",
+                          "theta", "vega", "dte"]].rename(columns={
+                "iv": "IV%", "iv_rank": "IV Rank", "iv_pctile": "IV %ile", "hv": "HV%",
+                "iv_hv": "IV/HV", "delta": "Δ", "theta": "θ/day", "vega": "vega", "dte": "DTE"})
+            st.dataframe(show, width="stretch", height=380)
+
+            # ---- Per-stock IV + Greeks + history ----
+            st.divider()
+            st.markdown("#### 🔎 Per-stock — IV / Greeks / verdict")
+            isym = st.selectbox("Stock (IV Rank se sorted, sasta pehle)",
+                                list(ivdf.index), key="iv_sym")
+            r = ivdf.loc[isym]
+            rank = r["iv_rank"]
+            if pd.notna(rank) and rank <= 30:
+                verdict = "🟢 **Buy-zone** — IV apne 52-week range me sasta (buying-friendly)"
+            elif pd.notna(rank) and rank >= 70:
+                verdict = "🔴 **Mehenga** — IV high, buying avoid (IV-crush risk)"
+            else:
+                verdict = "🟡 **Normal** — IV beech me"
+            st.markdown(f"### {isym} — {verdict}")
+            m = st.columns(5)
+            m[0].metric("IV", f"{r['iv']:.1f}%")
+            m[1].metric("IV Rank", f"{rank:.0f}" if pd.notna(rank) else "—")
+            m[2].metric("IV %ile", f"{r['iv_pctile']:.0f}")
+            m[3].metric("Realized vol", f"{r['hv']:.1f}%" if pd.notna(r['hv']) else "—")
+            m[4].metric("IV / HV", f"{r['iv_hv']:.2f}" if pd.notna(r['iv_hv']) else "—")
+            g = st.columns(5)
+            g[0].metric("Delta", f"{r['delta']:.2f}" if pd.notna(r['delta']) else "—")
+            g[1].metric("Theta / day", f"{r['theta']:.1f}" if pd.notna(r['theta']) else "—")
+            g[2].metric("Gamma", f"{r['gamma']:.4f}" if pd.notna(r['gamma']) else "—")
+            g[3].metric("Vega (/1%)", f"{r['vega']:.1f}" if pd.notna(r['vega']) else "—")
+            g[4].metric("Days-to-expiry", f"{int(r['dte'])}" if pd.notna(r['dte']) else "—")
+
+            hist = cached_iv_history(isym).tail(252)
+            if not hist.empty:
+                st.markdown("**📈 ATM IV history (1 saal)** — abhi kahan vs apne range")
+                cur, lo, hi = float(hist.iloc[-1]), float(hist.min()), float(hist.max())
+                fig = go.Figure(go.Scatter(x=list(hist.index), y=list(hist.values),
+                                mode="lines", line=dict(color="#38bdf8", width=2),
+                                hovertemplate="%{x}<br>IV %{y:.1f}%<extra></extra>"))
+                fig.add_hline(y=cur, line=dict(color="#f59e0b", width=1.4),
+                              annotation_text=f"aaj {cur:.0f}%", annotation_position="right")
+                fig.add_hline(y=lo, line=dict(color="rgba(16,185,129,.5)", width=1, dash="dot"),
+                              annotation_text=f"1yr low {lo:.0f}%", annotation_position="right")
+                fig.add_hline(y=hi, line=dict(color="rgba(244,63,94,.5)", width=1, dash="dot"),
+                              annotation_text=f"1yr high {hi:.0f}%", annotation_position="right")
+                fig.update_layout(height=280, margin=dict(l=6, r=6, t=10, b=0),
+                                  template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)",
+                                  plot_bgcolor="rgba(0,0,0,0)", showlegend=False,
+                                  yaxis_title="ATM IV %")
+                step = max(1, len(hist) // 10)
+                fig.update_xaxes(type="category", tickmode="array",
+                                 tickvals=list(hist.index)[::step], tickangle=-30, tickfont_size=10)
+                st.plotly_chart(fig, width="stretch")
+            st.caption("θ/day = ATM option ka roz ka time-decay (₹/share). Vega = +1% IV pe "
+                       "premium change. Low IV Rank + acha momentum = ideal buy setup.")
 
 
 # =========================================================================== #
