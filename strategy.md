@@ -59,3 +59,36 @@ Non-directional: we buy **both** legs, so direction only needs a big move, not a
 `min_factors, price_move%, vol_mult, deliv_min, otm_steps, dte_min,
 turnover_min, leg_oi_min, leg_vol_min, hold_days, exit_before_expiry,
 trail_activate%, trail_pullback%, loss_exit%`
+
+---
+
+## 2. Momentum directional spread
+
+Same momentum entry, but a **directional debit spread** instead of a long
+strangle — built to fix "Momentum buying"'s three structural leaks: theta drag,
+double premium, and wasted (non-directional) exposure.
+
+### Entry — identical signal to §1
+`≥ 4 of 5` momentum factors + the same filters (turnover, leg OI/volume, F&O-ban,
+one position per stock). **Direction** = the breakout side: close above the
+prior-N-day high → **up**, below the prior-N-day low → **down**, else the sign of
+the day's move.
+
+### Legs (net **debit** spread)
+- **Up → bull call spread:** BUY ATM CE + SELL OTM+3 CE
+- **Down → bear put spread:** BUY ATM PE + SELL OTM+3 PE
+- Short leg's premium offsets the long → cheaper entry, less theta, **defined
+  risk** (max loss = the debit). Upside is capped at the strike width.
+
+### Exit — whichever first (on the spread value = long − short)
+| Exit | Rule |
+|---|---|
+| **Target** | underlying moves **+7%** in the trade direction |
+| **Stop** | underlying reverses **−3%** against |
+| **Time** | held **7 trading days**, or date reaches **expiry − 3 days** |
+
+### Why (vs §1)
+Long-only strangles bleed theta and pay twice; a directional spread uses the
+signal's direction, collects premium on the short leg, and caps risk. In the
+full backtest this lifts win-rate ~28% → ~40% and cuts the net loss by ~73%
+(near break-even) — still net-negative overall, so: **research, not advice.**
