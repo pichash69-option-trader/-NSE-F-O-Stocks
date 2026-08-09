@@ -564,10 +564,11 @@ def cached_iv_history(symbol):
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
-def cached_backtest(strategy):
-    """Run + cache a full-universe backtest (heavy: ~1-2 min first time)."""
+def cached_backtest(strategy, iv_gate=False):
+    """Run + cache a full-universe backtest (heavy: ~1-2 min first time).
+    iv_gate=True only enters on cheap-IV days (IV Rank <= 30)."""
     if strategy in backtest.STRATEGIES:
-        return backtest.run(strategy=strategy)
+        return backtest.run(strategy=strategy, iv_gate=iv_gate)
     return None
 
 
@@ -2407,14 +2408,20 @@ elif section == "🎯 Backtest":
     st.caption(_desc.get(strat, "") + " Full rules: **strategy.md**. "
                "⚠️ Research/education only — daily (EOD) data, **koi trading advice nahi**.")
 
-    if st.button("▶️ Run backtest (all ~210 stocks · pehli baar ~1–2 min)", key="bt_run"):
+    iv_gate = st.toggle("🛒 IV gate — sirf **low-IV (IV Rank ≤30)** din pe buy (sasta khareedo) "
+                        "· thoda slow (~3 min)", value=False, key="bt_ivgate")
+
+    if st.button("▶️ Run backtest (all ~210 stocks · pehli baar ~1–3 min)", key="bt_run"):
         st.session_state["bt_done"] = True
     if not st.session_state.get("bt_done"):
         st.info("Upar **Run backtest** dabao — sab F&O stocks pe strategy chalegi "
                 "(result cache ho jayega, dobara instant).")
     else:
-        with st.spinner("Backtest chal raha hai (sab stocks)…"):
-            trades, per_stock, overall, eq = cached_backtest(strat)
+        with st.spinner("Backtest chal raha hai (sab stocks)…"
+                        + (" + IV gate" if iv_gate else "")):
+            trades, per_stock, overall, eq = cached_backtest(strat, iv_gate)
+        if iv_gate:
+            st.caption("🛒 **IV gate ON** — sirf un dino ki entry jab IV Rank ≤30 (option sasta).")
 
         if trades is None or trades.empty:
             st.warning("Koi trade nahi bana (data adhoora ho sakta hai — options build "

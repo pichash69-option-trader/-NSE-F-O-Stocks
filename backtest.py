@@ -14,6 +14,19 @@ import numpy as np
 import pandas as pd
 
 import db
+import iv as _iv          # optional IV-Rank entry gate ("only buy low IV")
+
+
+def _iv_rank_series(conn, symbol, window=252):
+    """Historical daily ATM IV-Rank (0-100) for a stock: each day's ATM IV vs its
+    trailing 52-week min/max. Used to gate entries to cheap-IV days only."""
+    hist = _iv.atm_iv_history(conn, symbol)
+    if hist.empty:
+        return pd.Series(dtype=float)
+    rmin = hist.rolling(window, min_periods=30).min()
+    rmax = hist.rolling(window, min_periods=30).max()
+    return ((hist - rmin) / (rmax - rmin) * 100).dropna()
+
 
 # Default parameters for "Momentum buying" (see strategy.md).
 MOMENTUM_PARAMS = dict(
@@ -355,6 +368,10 @@ def run_symbol(conn, symbol, p, strategy="Momentum buying", ban_dates=None):
     spots = px.set_index("date")["close"]
     is_spread = strategy == "Momentum directional spread"
     is_single = strategy == "Momentum single buy"
+    # Optional IV-Rank gate: only enter on days the option is cheap (low IV Rank)
+    iv_gate = bool(p.get("iv_gate"))
+    iv_max = p.get("iv_rank_max", 30)
+    iv_rank = _iv_rank_series(conn, symbol) if iv_gate else None
 
     def _direction(r):
         if pd.notna(r.roll_hi) and r.close > r.roll_hi:
@@ -369,6 +386,10 @@ def run_symbol(conn, symbol, p, strategy="Momentum buying", ban_dates=None):
             continue
         if r.date in ban_dates:
             continue
+        if iv_gate:                              # only buy when IV is cheap
+            rk = iv_rank.get(r.date) if iv_rank is not None else None
+            if rk is None or rk > iv_max:
+                continue
         if is_single:
             setup = _setup_single(conn, symbol, r.date, float(r.close), _direction(r), p)
             if setup is None:
@@ -460,12 +481,16 @@ def equity_curve(trades_df):
     return e[["exit_date", "cum_pts"]].reset_index(drop=True)
 
 
-def run(strategy="Momentum buying", symbols=None, params=None, progress=None):
-    """Run a named strategy across `symbols` (default: all F&O).
-    Returns (trades_df, per_stock_df, overall_dict, equity_df)."""
+def run(strategy="Momentum buying", symbols=None, params=None, progress=None,
+        iv_gate=False, iv_rank_max=30):
+    """Run a named strategy across `symbols` (default: all F&O). With `iv_gate`
+    on, entries are only taken on days the stock's ATM IV-Rank <= `iv_rank_max`
+    (i.e. options are cheap). Returns (trades_df, per_stock_df, overall, equity)."""
     p = dict(STRATEGIES.get(strategy, MOMENTUM_PARAMS))
     if params:
         p.update(params)
+    p["iv_gate"] = iv_gate
+    p["iv_rank_max"] = iv_rank_max
     conn = db.connect()
     try:
         if symbols is None:
