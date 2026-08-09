@@ -2189,7 +2189,24 @@ elif section == "🔎 Stocks filter":
     # ---------------- Per-stock checklist ----------------
     st.divider()
     st.markdown("#### ✅ Per-stock checklist — 24 rules")
-    fsym = st.selectbox("Stock", list(pdf.index), key="flt_sym")
+
+    # 🏆 Leaderboard — which stocks pass the MOST rules (all 24, or your selection)
+    basis = st.radio("Ranking kis par", ["All 24 rules", "Selected filters only"],
+                     horizontal=True, key="flt_rankbasis")
+    rank_cols = sel if (basis == "Selected filters only" and sel) else list(pdf.columns)
+    scores = pdf[rank_cols].fillna(False).sum(axis=1).astype(int)
+    ranked = scores.sort_values(ascending=False)
+    denom = len(rank_cols)
+    lead = ranked.head(25).reset_index()
+    lead.columns = ["Stock", f"Score /{denom}"]
+    lead.insert(0, "Rank", range(1, len(lead) + 1))
+    st.markdown(f"**🏆 Sabse zyada rules pass karne wale** (out of {denom}) — top 25:")
+    st.dataframe(lead, hide_index=True, width="stretch", height=320)
+    st.caption(f"Sabse strong abhi: **{ranked.index[0]}** ({ranked.iloc[0]}/{denom}). "
+               "Neeche kisi bhi stock ka poora 24-line breakdown dekho.")
+
+    # per-stock detail — dropdown sorted by score (top first)
+    fsym = st.selectbox("Stock (score se sorted)", list(ranked.index), key="flt_sym")
     score = int(pdf.loc[fsym].fillna(False).sum())
     st.metric(f"{fsym} — filters pass", f"{score} / 24")
     c1, c2 = st.columns(2)
